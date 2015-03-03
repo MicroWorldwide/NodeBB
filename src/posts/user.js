@@ -6,7 +6,6 @@ var async = require('async'),
 	user = require('../user'),
 	groups = require('../groups'),
 	meta = require('../meta'),
-	websockets = require('../socket.io'),
 	postTools = require('../postTools'),
 	plugins = require('../plugins');
 
@@ -18,11 +17,14 @@ module.exports = function(Posts) {
 			groups: function(next) {
 				groups.getUserGroups(uids, next);
 			},
+			userSettings: function(next){
+				user.getMultipleUserSettings(uids, next);
+			},
 			userData: function(next) {
 				user.getMultipleUserFields(uids, ['uid', 'username', 'userslug', 'reputation', 'postcount', 'picture', 'signature', 'banned', 'status'], next);
 			},
 			online: function(next) {
-				websockets.isUsersOnline(uids, next);
+				require('../socket.io').isUsersOnline(uids, next);
 			}
 		}, function(err, results) {
 			if (err) {
@@ -30,10 +32,16 @@ module.exports = function(Posts) {
 			}
 
 			var userData = results.userData;
-			for(var i=0; i<userData.length; ++i) {
-				userData[i].groups = results.groups[i];
-				userData[i].status = user.getStatus(userData[i].status, results.online[i]);
-			}
+			userData.forEach(function(userData, i) {
+				userData.groups = results.groups[i];
+				if (!results.userSettings[i].groupTitle) {
+					results.userSettings[i].groupTitle = results.groups[i][0] ? results.groups[i][0].name : '';
+				}
+				results.groups[i].forEach(function(group, index) {
+					group.selected = group.name === results.userSettings[i].groupTitle;
+				});
+				userData.status = user.getStatus(userData.status, results.online[i]);
+			});
 
 			async.map(userData, function(userData, next) {
 				userData.uid = userData.uid || 0;
@@ -46,7 +54,7 @@ module.exports = function(Posts) {
 
 				async.parallel({
 					signature: function(next) {
-						if (parseInt(meta.config.disableSignatures, 10) === 1) {
+						if (!userData.signature || parseInt(meta.config.disableSignatures, 10) === 1) {
 							userData.signature = '';
 							return next();
 						}

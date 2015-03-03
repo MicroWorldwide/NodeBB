@@ -22,8 +22,7 @@ var fs = require('fs'),
 	languages = require('../languages'),
 	image = require('../image'),
 	file = require('../file'),
-	helpers = require('./helpers'),
-	websockets = require('../socket.io');
+	helpers = require('./helpers');
 
 function getUserDataByUserSlug(userslug, callerUID, callback) {
 	user.getUidByUserslug(userslug, function(err, uid) {
@@ -91,7 +90,7 @@ function getUserDataByUserSlug(userslug, callerUID, callback) {
 			userData.disableSignatures = meta.config.disableSignatures !== undefined && parseInt(meta.config.disableSignatures, 10) === 1;
 			userData['email:confirmed'] = !!parseInt(userData['email:confirmed'], 10);
 			userData.profile_links = results.profile_links;
-			userData.status = websockets.isUserOnline(userData.uid) ? (userData.status || 'online') : 'offline';
+			userData.status = require('../socket.io').isUserOnline(userData.uid) ? (userData.status || 'online') : 'offline';
 			userData.banned = parseInt(userData.banned, 10) === 1;
 			userData.websiteName = userData.website.replace(validator.escape('http://'), '').replace(validator.escape('https://'), '');
 			userData.followingCount = parseInt(userData.followingCount, 10) || 0;
@@ -236,7 +235,7 @@ accountsController.getTopics = function(req, res, next) {
 accountsController.getGroups = function(req, res, next) {
 	var callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
 
-	getBaseUser(req.params.userslug, callerUID, function(err, userData) {
+	accountsController.getBaseUser(req.params.userslug, callerUID, function(err, userData) {
 		if (err) {
 			return next(err);
 		}
@@ -260,7 +259,7 @@ accountsController.getGroups = function(req, res, next) {
 function getFromUserSet(tpl, set, method, type, req, res, next) {
 	var callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
 
-	getBaseUser(req.params.userslug, callerUID, function(err, userData) {
+	accountsController.getBaseUser(req.params.userslug, callerUID, function(err, userData) {
 		if (err) {
 			return next(err);
 		}
@@ -282,7 +281,7 @@ function getFromUserSet(tpl, set, method, type, req, res, next) {
 	});
 }
 
-function getBaseUser(userslug, callerUID, callback) {
+accountsController.getBaseUser = function(userslug, callerUID, callback) {
 	user.getUidByUserslug(userslug, function (err, uid) {
 		if (err || !uid) {
 			return callback(err);
@@ -315,7 +314,7 @@ function getBaseUser(userslug, callerUID, callback) {
 			callback(null, results.user);
 		});
 	});
-}
+};
 
 accountsController.accountEdit = function(req, res, next) {
 	var callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
@@ -342,7 +341,7 @@ accountsController.accountEdit = function(req, res, next) {
 accountsController.accountSettings = function(req, res, next) {
 	var callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
 
-	getBaseUser(req.params.userslug, callerUID, function(err, userData) {
+	accountsController.getBaseUser(req.params.userslug, callerUID, function(err, userData) {
 		if (err) {
 			return next(err);
 		}
@@ -355,6 +354,9 @@ accountsController.accountSettings = function(req, res, next) {
 			settings: function(next) {
 				plugins.fireHook('filter:user.settings', [], next);
 			},
+			userGroups: function(next) {
+				groups.getUserGroups([userData.uid], next);
+			},			
 			languages: function(next) {
 				languages.list(next);
 			}
@@ -365,6 +367,7 @@ accountsController.accountSettings = function(req, res, next) {
 
 			userData.settings = results.settings;
 			userData.languages = results.languages;
+			userData.userGroups = results.userGroups[0];
 
 			userData.disableEmailSubscriptions = parseInt(meta.config.disableEmailSubscriptions, 10) === 1;
 

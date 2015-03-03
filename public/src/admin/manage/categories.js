@@ -80,6 +80,10 @@ define('admin/manage/categories', [
 				order: $('.admin-categories #entry-container').children().length + 1
 			};
 
+			saveNew(category);
+		}
+
+		function saveNew(category) {
 			socket.emit('admin.categories.create', category, function(err, data) {
 				if(err) {
 					return app.alertError(err.message);
@@ -188,6 +192,27 @@ define('admin/manage/categories', [
 						categoryRow.remove();
 					});
 				});
+			});
+
+			$('.admin-categories').on('click', '.duplicate', function() {
+				var inputs = $(this).parents('li[data-cid]').find('[data-name]'),
+					data = {};
+
+				inputs.each(function() {
+					var name = $(this).attr('data-name');
+					switch (name) {
+						case 'icon':
+							data[name] = $(this).attr('value');
+							break;
+						case 'name':
+							data[name] = $(this).val() + ' (copy)';
+							break;
+						default: 
+							data[name] = $(this).val();
+					}
+				});
+
+				saveNew(data);
 			});
 
 			$('.admin-categories').on('click', '.permissions', function() {

@@ -1,5 +1,5 @@
 "use strict";
-/*global io, templates, translator, ajaxify, utils, bootbox, RELATIVE_PATH, config*/
+/*global io, templates, translator, ajaxify, utils, bootbox, RELATIVE_PATH, config, Visibility*/
 
 var	socket,
 	app = app || {};
@@ -366,7 +366,7 @@ app.cacheBuster = null;
 				}
 			}
 		});
-	}
+	};
 
 	function createHeaderTooltips() {
 		if (utils.findBootstrapEnvironment() === 'xs') {
@@ -459,7 +459,7 @@ app.cacheBuster = null;
 	}
 
 	function collapseNavigationOnClick() {
-		$('#main-nav a, #user-control-list a, #logged-out-menu li a, #logged-in-menu .visible-xs').off('click').on('click', function() {
+		$('#nav-dropdown').off('click').on('click', '#main-nav a, #user-control-list a, #logged-out-menu li a, #logged-in-menu .visible-xs, #chat-list a', function() {
 			if($('.navbar .navbar-collapse').hasClass('in')) {
 				$('.navbar-header button').click();
 			}
@@ -570,7 +570,21 @@ app.cacheBuster = null;
 	};
 
 	function showEmailConfirmWarning() {
-		if (config.requireEmailConfirmation && app.user.uid && !app.user['email:confirmed']) {
+		if (!config.requireEmailConfirmation || !app.user.uid) {
+			return;
+		}
+		if (!app.user.email) {
+			app.alert({
+				alert_id: 'email_confirm',
+				message: '[[error:no-email-to-confirm]]',
+				type: 'warning',
+				timeout: 0,
+				clickfn: function() {
+					app.removeAlert('email_confirm');
+					ajaxify.go('user/' + app.user.userslug + '/edit');
+				}
+			});
+		} else if (!app.user['email:confirmed']) {
 			app.alert({
 				alert_id: 'email_confirm',
 				message: '[[error:email-not-confirmed]]',

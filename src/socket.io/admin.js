@@ -26,6 +26,7 @@ var	async = require('async'),
 		groups: require('./admin/groups'),
 		tags: require('./admin/tags'),
 		rewards: require('./admin/rewards'),
+		navigation: require('./admin/navigation'),
 		themes: {},
 		plugins: {},
 		widgets: {},
@@ -108,6 +109,20 @@ SocketAdmin.plugins.toggleActive = function(socket, plugin_id, callback) {
 
 SocketAdmin.plugins.toggleInstall = function(socket, data, callback) {
 	plugins.toggleInstall(data.id, data.version, callback);
+};
+
+SocketAdmin.plugins.getActive = function(socket, data, callback) {
+	plugins.getActive(callback);
+};
+
+SocketAdmin.plugins.orderActivePlugins = function(socket, data, callback) {
+	async.each(data, function(plugin, next) {
+		if (plugin && plugin.name) {
+			db.sortedSetAdd('plugins:active', plugin.order || 0, plugin.name, next);
+		} else {
+			next();
+		}		
+	}, callback);
 };
 
 SocketAdmin.plugins.upgrade = function(socket, data, callback) {

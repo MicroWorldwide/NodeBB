@@ -12,9 +12,11 @@ var app,
 	nconf = require('nconf'),
 
 	plugins = require('./../plugins'),
+	navigation = require('./../navigation'),
 	meta = require('./../meta'),
 	translator = require('./../../public/src/translator'),
 	user = require('./../user'),
+	groups = require('./../groups'),
 	db = require('./../database'),
 	categories = require('./../categories'),
 	topics = require('./../topics'),
@@ -214,12 +216,7 @@ middleware.buildHeader = function(req, res, next) {
 middleware.renderHeader = function(req, res, callback) {
 	var uid = req.user ? parseInt(req.user.uid, 10) : 0;
 
-	var custom_header = {
-		uid: uid,
-		'navigation': []
-	};
-
-	plugins.fireHook('filter:header.build', custom_header, function(err, custom_header) {
+	navigation.get(function(err, menuItems) {
 		if (err) {
 			return callback(err);
 		}
@@ -257,7 +254,7 @@ middleware.renderHeader = function(req, res, callback) {
 				'cache-buster': meta.config['cache-buster'] ? 'v=' + meta.config['cache-buster'] : '',
 				'brand:logo': meta.config['brand:logo'] || '',
 				'brand:logo:display': meta.config['brand:logo']?'':'hide',
-				navigation: custom_header.navigation,
+				navigation: menuItems,
 				allowRegistration: meta.config.allowRegistration === undefined || parseInt(meta.config.allowRegistration, 10) === 1,
 				searchEnabled: plugins.hasListeners('filter:search.query')
 			};
@@ -306,7 +303,7 @@ middleware.renderHeader = function(req, res, callback) {
 						if (err) {
 							return next(err);
 						}
-						meta.title.build(req.url.slice(1), settings.language, res.locals, next);
+						meta.title.build(req.url.slice(1), settings.userLang, res.locals, next);
 					});
 				} else {
 					meta.title.build(req.url.slice(1), meta.config.defaultLang, res.locals, next);
@@ -317,7 +314,7 @@ middleware.renderHeader = function(req, res, callback) {
 			},
 			user: function(next) {
 				if (uid) {
-					user.getUserFields(uid, ['username', 'userslug', 'picture', 'status', 'email:confirmed', 'banned'], next);
+					user.getUserFields(uid, ['username', 'userslug', 'email', 'picture', 'status', 'email:confirmed', 'banned'], next);
 				} else {
 					next(null, {
 						username: '[[global:guest]]',
@@ -342,7 +339,7 @@ middleware.renderHeader = function(req, res, callback) {
 			results.user.isAdmin = results.isAdmin || false;
 			results.user.uid = parseInt(results.user.uid, 10);
 			results.user['email:confirmed'] = parseInt(results.user['email:confirmed'], 10) === 1;
-
+			
 			templateValues.browserTitle = results.title;
 			templateValues.isAdmin = results.user.isAdmin;
 			templateValues.user = results.user;
@@ -516,6 +513,17 @@ middleware.publicTagListing = function(req, res, next) {
 	} else {
 		controllers.helpers.notAllowed(req, res);
 	}
+};
+
+middleware.exposeGroupName = function(req, res, next) {
+	if (!req.params.hasOwnProperty('slug')) { return next(); }
+
+	groups.getGroupNameByGroupSlug(req.params.slug, function(err, groupName) {
+		if (err) { return next(err); }
+
+		res.locals.groupName = groupName;
+		next();
+	});
 };
 
 module.exports = function(webserver) {

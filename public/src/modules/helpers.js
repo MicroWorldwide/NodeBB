@@ -9,8 +9,20 @@
 
 	var helpers = {};
 
-	helpers.displayUsersLink = function(config) {
-		return (config.loggedIn || !config.privateUserInfo);
+	helpers.displayMenuItem = function(data, index) {
+		var item = data.navigation[index],
+			properties = item.properties;
+
+		if (properties) {
+			if (properties.loggedIn && !data.loggedIn ||
+				properties.adminOnly && !data.isAdmin ||
+				properties.installed && properties.installed.search && !data.searchEnabled ||
+				properties.hideIfPrivate && data.privateUserInfo) {
+				return false;
+			}
+		}
+
+		return true;
 	};
 
 	helpers.buildMetaTag = function(tag) {
@@ -33,6 +45,8 @@
 		} else {
 			if (groupObj.isPending) {
 				return '<button class="btn btn-warning disabled"><i class="fa fa-clock-o"></i> Invitation Pending</button>';
+			} else if (groupObj.isInvited) {
+				return '<button class="btn btn-link" data-action="rejectInvite" data-group="' + groupObj.name + '">Reject</button><button class="btn btn-success" data-action="acceptInvite" data-group="' + groupObj.name + '"><i class="fa fa-plus"></i> Accept Invitation</button>';
 			} else {
 				return '<button class="btn btn-success" data-action="join" data-group="' + groupObj.name + '"><i class="fa fa-plus"></i> Join Group</button>';
 			}

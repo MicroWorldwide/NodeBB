@@ -46,6 +46,9 @@ module.exports = function(privileges) {
 	};
 
 	privileges.categories.can = function(privilege, cid, uid, callback) {
+		if (!cid) {
+			return callback(null, false);
+		}
 		categories.getCategoryField(cid, 'disabled', function(err, disabled) {
 			if (err) {
 				return callback(err);
@@ -81,6 +84,9 @@ module.exports = function(privileges) {
 		});
 
 		async.parallel({
+			categories: function(next) {
+				categories.getMultipleCategoryFields(cids, ['disabled'], next);
+			},
 			allowedTo: function(next) {
 				helpers.isUserAllowedTo(privilege, uid, cids, next);
 			},
@@ -95,6 +101,10 @@ module.exports = function(privileges) {
 				return callback(err);
 			}
 
+			cids = cids.filter(function(cid, index) {
+				return !results.categories[index].disabled;
+			});
+			
 			if (results.isAdmin) {
 				return callback(null, cids);
 			}

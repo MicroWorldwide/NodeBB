@@ -21,7 +21,7 @@ var db = require('./database'),
 	schemaDate, thisSchemaDate,
 
 	// IMPORTANT: REMEMBER TO UPDATE VALUE OF latestSchema
-	latestSchema = Date.UTC(2015, 1, 17);
+	latestSchema = Date.UTC(2015, 1, 25, 6);
 
 Upgrade.check = function(callback) {
 	db.get('schemaDate', function(err, value) {
@@ -859,10 +859,111 @@ Upgrade.upgrade = function(callback) {
 				winston.info('[2015/02/17] renaming home.tpl to categories.tpl skipped');
 				next();
 			}
+		},
+		function(next) {
+			thisSchemaDate = Date.UTC(2015, 1, 23);
+			if (schemaDate < thisSchemaDate) {
+				db.setAdd('plugins:active', 'nodebb-rewards-essentials', function(err) {
+					winston.info('[2015/2/23] Activating NodeBB Essential Rewards');
+					Plugins.reload(function() {
+						if (err) {
+							next(err);
+						} else {
+							Upgrade.update(thisSchemaDate, next);
+						}
+					});
+				});
+			} else {
+				winston.info('[2015/2/23] Activating NodeBB Essential Rewards - skipped');
+				next();
+			}
+		},
+		function(next) {
+			thisSchemaDate = Date.UTC(2015, 1, 24);
+			if (schemaDate < thisSchemaDate) {
+				updatesMade = true;
+				winston.info('[2015/02/24] Upgrading plugins:active to sorted set');
+
+				db.getSetMembers('plugins:active', function(err, activePlugins) {
+					if (err) {
+						return next(err);
+					}
+					if (!Array.isArray(activePlugins) || !activePlugins.length) {
+						winston.info('[2015/02/24] Upgrading plugins:active to sorted set done');
+						Upgrade.update(thisSchemaDate, next);
+					}
+
+					db.delete('plugins:active', function(err) {
+						if (err) {
+							return next(err);
+						}
+						var order = -1;
+						async.eachSeries(activePlugins, function(plugin, next) {
+							++order;
+							db.sortedSetAdd('plugins:active', order, plugin, next);
+						}, function(err) {
+							if (err) {
+								return next(err);
+							}
+							winston.info('[2015/02/24] Upgrading plugins:active to sorted set done');
+							Upgrade.update(thisSchemaDate, next);
+						});
+					});
+				});
+			} else {
+				winston.info('[2015/02/24] Upgrading plugins:active to sorted set skipped');
+				next();
+			}
+		},
+		function(next) {
+			thisSchemaDate = Date.UTC(2015, 1, 24, 1);
+			if (schemaDate < thisSchemaDate) {
+				updatesMade = true;
+				winston.info('[2015/02/24] Upgrading privilege groups to system groups');
+
+				var isPrivilegeGroup = /^cid:\d+:privileges:[\w:]+$/;
+				db.getSortedSetRange('groups:createtime', 0, -1, function (err, groupNames) {
+					groupNames = groupNames.filter(function(name) {
+						return isPrivilegeGroup.test(name);
+					});
+
+					async.eachLimit(groupNames, 5, function(groupName, next) {
+						db.setObjectField('group:' + groupName, 'system', '1', next);
+					}, function(err) {
+						if (err) {
+							return next(err);
+						}
+						winston.info('[2015/02/24] Upgrading privilege groups to system groups done');
+						Upgrade.update(thisSchemaDate, next);
+					})
+				});
+			} else {
+				winston.info('[2015/02/24] Upgrading privilege groups to system groups skipped');
+				next();
+			}
+		},
+		function(next) {
+			thisSchemaDate = Date.UTC(2015, 1, 25, 6);
+			if (schemaDate < thisSchemaDate) {
+				updatesMade = true;
+				winston.info('[2015/02/25] Upgrading menu items to dynamic navigation system');
+
+				require('./navigation/admin').save(require('../install/data/navigation.json'), function(err) {
+					if (err) {
+						return next(err);
+					}
+
+					winston.info('[2015/02/25] Upgrading menu items to dynamic navigation system done');
+					Upgrade.update(thisSchemaDate, next);
+				});
+			} else {
+				winston.info('[2015/02/25] Upgrading menu items to dynamic navigation system skipped');
+				next();
+			}
 		}
 
 		// Add new schema updates here
-		// IMPORTANT: REMEMBER TO UPDATE VALUE OF latestSchema IN LINE 22!!!
+		// IMPORTANT: REMEMBER TO UPDATE VALUE OF latestSchema IN LINE 24!!!
 	], function(err) {
 		if (!err) {
 			if(updatesMade) {
