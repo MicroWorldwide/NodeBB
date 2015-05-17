@@ -12,7 +12,7 @@ groupsController.list = function(req, res, next) {
 	groups.list({
 		truncateUserList: true,
 		expand: true,
-		uid: req.user ? parseInt(req.user.uid, 10) : 0
+		uid: req.uid
 	}, function(err, groups) {
 		if (err) {
 			return next(err);
@@ -25,12 +25,12 @@ groupsController.list = function(req, res, next) {
 };
 
 groupsController.details = function(req, res, next) {
-	var uid = req.user ? parseInt(req.user.uid, 10) : 0;
-
 	async.waterfall([
 		async.apply(groups.exists, res.locals.groupName),
 		function(exists, next) {
-			if (!exists) { return next(undefined, null); }
+			if (!exists) {
+				return next(undefined, null);
+			}
 
 			// Ensure the group isn't hidden either
 			groups.isHidden(res.locals.groupName, next);
@@ -43,50 +43,53 @@ groupsController.details = function(req, res, next) {
 			} else {
 				// If not, only members are granted access
 				async.parallel([
-					async.apply(groups.isMember, uid, res.locals.groupName),
-					async.apply(groups.isInvited, uid, res.locals.groupName)
+					async.apply(groups.isMember, req.uid, res.locals.groupName),
+					async.apply(groups.isInvited, req.uid, res.locals.groupName)
 				], function(err, checks) {
 					next(err, checks[0] || checks[1]);
 				});
 			}
 		}
 	], function(err, ok) {
-		if (ok) {
-			async.parallel({
-				group: function(next) {
-					groups.get(res.locals.groupName, {
-						expand: true,
-						uid: uid
-					}, next);
-				},
-				posts: function(next) {
-					groups.getLatestMemberPosts(res.locals.groupName, 10, uid, next);
-				}
-			}, function(err, results) {
-				if (err) {
-					return next(err);
-				}
-
-				if (!results.group) {
-					return helpers.notFound(req, res);
-				}
-
-				res.render('groups/details', results);
-			});
-		} else {
-			return res.locals.isAPI ? res.status(302).json('/groups') : res.redirect('/groups');
+		if (err) {
+			return next(err);
 		}
+
+		if (!ok) {
+			return helpers.redirect(res, '/groups');
+		}
+
+		async.parallel({
+			group: function(next) {
+				groups.get(res.locals.groupName, {
+					expand: true,
+					uid: req.uid
+				}, next);
+			},
+			posts: function(next) {
+				groups.getLatestMemberPosts(res.locals.groupName, 10, req.uid, next);
+			}
+		}, function(err, results) {
+			if (err) {
+				return next(err);
+			}
+
+			if (!results.group) {
+				return helpers.notFound(req, res);
+			}
+
+			res.render('groups/details', results);
+		});
 	});
 };
 
 groupsController.members = function(req, res, next) {
-	var uid = req.user ? parseInt(req.user.uid, 10) : 0;
 	async.waterfall([
 		function(next) {
 			groups.getGroupNameByGroupSlug(req.params.slug, next);
 		},
 		function(groupName, next) {
-			user.getUsersFromSet('group:' + groupName + ':members', uid, 0, 49, next);
+			user.getUsersFromSet('group:' + groupName + ':members', req.uid, 0, 49, next);
 		},
 	], function(err, users) {
 		if (err) {

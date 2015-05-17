@@ -12,9 +12,10 @@ var async = require('async'),
 
 module.exports = function(Posts) {
 	Posts.create = function(data, callback) {
+		// This is an internal method, consider using Topics.reply instead
 		var uid = data.uid,
 			tid = data.tid,
-			content = data.content,
+			content = data.content.toString(),
 			timestamp = data.timestamp || Date.now();
 
 		if (!uid && parseInt(uid, 10) !== 0) {
@@ -68,7 +69,13 @@ module.exports = function(Posts) {
 						topics.onNewPostMade(postData, next);
 					},
 					function(next) {
-						categories.onNewPostMade(postData, next);
+						topics.getTopicFields(tid, ['cid', 'pinned'], function(err, topicData) {
+							if (err) {
+								return next(err);
+							}
+							postData.cid = topicData.cid;
+							categories.onNewPostMade(topicData.cid, topicData.pinned, postData, next);
+						});
 					},
 					function(next) {
 						db.sortedSetAdd('posts:pid', timestamp, postData.pid, next);

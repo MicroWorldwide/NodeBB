@@ -1,5 +1,5 @@
 "use strict";
-/*global io, templates, translator, ajaxify, utils, bootbox, RELATIVE_PATH, config, Visibility*/
+/*global io, templates, ajaxify, utils, bootbox, RELATIVE_PATH, config, Visibility*/
 
 var	socket,
 	app = app || {};
@@ -17,12 +17,12 @@ app.cacheBuster = null;
 	function socketIOConnect() {
 		var ioParams = {
 			reconnectionAttempts: config.maxReconnectionAttempts,
-			reconnectionDelay : config.reconnectionDelay,
+			reconnectionDelay: config.reconnectionDelay,
 			transports: config.socketioTransports,
 			path: config.relative_path + '/socket.io'
 		};
 
-		socket = io.connect(config.websocketAddress, ioParams);
+		socket = io(config.websocketAddress, ioParams);
 		reconnecting = false;
 
 		socket.on('event:connect', function () {
@@ -41,11 +41,6 @@ app.cacheBuster = null;
 		});
 
 		socket.on('reconnecting', function (attempt) {
-			if(attempt === parseInt(config.maxReconnectionAttempts, 10)) {
-				socket.io.attempts = 0;
-				return;
-			}
-
 			reconnecting = true;
 			var reconnectEl = $('#reconnect');
 
@@ -71,8 +66,15 @@ app.cacheBuster = null;
 			}, 1000);
 		});
 
+		socket.on('event:logout', app.logout);
+
 		socket.on('event:alert', function(data) {
 			app.alert(data);
+		});
+
+		socket.on('reconnect_failed', function() {
+			// Wait ten times the reconnection delay and then start over
+			setTimeout(socket.connect.bind(socket), parseInt(config.reconnectionDelay, 10) * 10);
 		});
 	}
 
@@ -105,8 +107,8 @@ app.cacheBuster = null;
 				case 'admin':
 					room = 'admin';
 				break;
-				case 'home':
-					room = 'home';
+				case 'categories':
+					room = 'categories';
 				break;
 			}
 			app.currentRoom = '';
@@ -167,7 +169,8 @@ app.cacheBuster = null;
 		});
 	};
 
-	app.enterRoom = function (room) {
+	app.enterRoom = function (room, callback) {
+		callback = callback || function() {};
 		if (socket) {
 			if (app.currentRoom === room) {
 				return;
@@ -178,28 +181,26 @@ app.cacheBuster = null;
 				username: app.user.username,
 				userslug: app.user.userslug,
 				picture: app.user.picture
+			}, function(err) {
+				if (err) {
+					app.alertError(err.message);
+					return;
+				}
+				app.currentRoom = room;
 			});
-
-			app.currentRoom = room;
 		}
 	};
 
 	function highlightNavigationLink() {
-		var path = window.location.pathname,
-			parts = path.split('/'),
-			active = parts[parts.length - 1];
-
+		var path = window.location.pathname;
 		$('#main-nav li').removeClass('active');
-		if (active) {
+		if (path) {
 			$('#main-nav li a').each(function () {
 				var href = $(this).attr('href');
-				if (active === "sort-posts" || active === "sort-reputation" || active === "search" || active === "latest" || active === "online") {
-					active = 'users';
-				}
 
-				if (href && href.match(active)) {
+				if (href && path.startsWith(href)) {
 					$(this.parentNode).addClass('active');
-					return false;
+				 	return false;
 				}
 			});
 		}
@@ -234,7 +235,7 @@ app.cacheBuster = null;
 	app.processPage = function () {
 		highlightNavigationLink();
 
-		$('span.timeago').timeago();
+		$('.timeago').timeago();
 
 		utils.makeNumbersHumanReadable($('.human-readable-number'));
 
@@ -310,18 +311,20 @@ app.cacheBuster = null;
 				titleObj.titles[0] = window.document.title;
 			}
 
-			translator.translate(title, function(translated) {
-				titleObj.titles[1] = translated;
-				if (titleObj.interval) {
-					clearInterval(titleObj.interval);
-				}
-
-				titleObj.interval = setInterval(function() {
-					var title = titleObj.titles[titleObj.titles.indexOf(window.document.title) ^ 1];
-					if (title) {
-						window.document.title = $('<div/>').html(title).text();
+			require(['translator'], function(translator) {
+				translator.translate(title, function(translated) {
+					titleObj.titles[1] = translated;
+					if (titleObj.interval) {
+						clearInterval(titleObj.interval);
 					}
-				}, 2000);
+
+					titleObj.interval = setInterval(function() {
+						var title = titleObj.titles[titleObj.titles.indexOf(window.document.title) ^ 1];
+						if (title) {
+							window.document.title = $('<div/>').html(title).text();
+						}
+					}, 2000);
+				});
 			});
 		} else {
 			if (titleObj.interval) {
@@ -372,7 +375,7 @@ app.cacheBuster = null;
 		if (utils.findBootstrapEnvironment() === 'xs') {
 			return;
 		}
-		$('#header-menu li [title]').each(function() {
+		$('#header-menu li a[title]').each(function() {
 			$(this).tooltip({
 				placement: 'bottom',
 				title: $(this).attr('title')
@@ -390,7 +393,7 @@ app.cacheBuster = null;
 		});
 	}
 
-	function handleSearch() {
+	app.handleSearch = function () {
 		var searchButton = $("#search-button"),
 			searchFields = $("#search-fields"),
 			searchInput = $('#search-fields input');
@@ -458,14 +461,6 @@ app.cacheBuster = null;
 		});
 	}
 
-	function collapseNavigationOnClick() {
-		$('#nav-dropdown').off('click').on('click', '#main-nav a, #user-control-list a, #logged-out-menu li a, #logged-in-menu .visible-xs, #chat-list a', function() {
-			if($('.navbar .navbar-collapse').hasClass('in')) {
-				$('.navbar-header button').click();
-			}
-		});
-	}
-
 	function handleStatusChange() {
 		$('#user-control-list .user-status').off('click').on('click', function(e) {
 			var status = $(this).attr('data-status');
@@ -479,27 +474,51 @@ app.cacheBuster = null;
 		});
 	}
 
+	app.updateUserStatus = function(el, status) {
+		if (!el.length) {
+			return;
+		}
+
+		translator.translate('[[global:' + status + ']]', function(translated) {
+			el.removeClass('online offline dnd away')
+				.addClass(status)
+				.attr('title', translated)
+				.attr('data-original-title', translated);
+		});
+	};
+
+	function handleNewTopic() {
+		$('#content').on('click', '#new_topic', function() {
+			require(['composer'], function(composer) {
+				var cid = ajaxify.variables.get('category_id');
+				if (cid) {
+					composer.newTopic(cid);
+				} else {
+					socket.emit('categories.getCategoriesByPrivilege', 'topics:create', function(err, categories) {
+						if (err) {
+							return app.alertError(err.message);
+						}
+						if (categories.length) {
+							composer.newTopic(categories[0].cid);
+						}
+					});
+				}
+			});
+		});
+	}
+
 	app.load = function() {
 		$('document').ready(function () {
-			var url = ajaxify.removeRelativePath(window.location.pathname.slice(1).replace(/\/$/, "")),
-				tpl_url = ajaxify.getTemplateMapping(url),
-				search = window.location.search,
-				hash = window.location.hash,
-				$window = $(window);
-
-
-			$window.trigger('action:ajaxify.start', {
-				url: url,
-				tpl_url: tpl_url
-			});
-
-			collapseNavigationOnClick();
+			var url = ajaxify.start(window.location.pathname.slice(1), true, window.location.search);
+			ajaxify.end(url, app.template);
 
 			handleStatusChange();
 
 			if (config.searchEnabled) {
-				handleSearch();
+				app.handleSearch();
 			}
+
+			handleNewTopic();
 
 			$('#logout-link').on('click', app.logout);
 
@@ -513,30 +532,7 @@ app.cacheBuster = null;
 			});
 
 			createHeaderTooltips();
-			showEmailConfirmWarning();
-
-			ajaxify.variables.parse();
-			ajaxify.currentPage = url;
-
-			$window.trigger('action:ajaxify.contentLoaded', {
-				url: url
-			});
-
-			if (window.history && window.history.replaceState) {
-				window.history.replaceState({
-					url: url + search + hash
-				}, url, RELATIVE_PATH + '/' + url + search + hash);
-			}
-
-			ajaxify.loadScript(tpl_url, function() {
-				ajaxify.widgets.render(tpl_url, url, function() {
-					app.processPage();
-					$window.trigger('action:ajaxify.end', {
-						url: url,
-						tpl_url: tpl_url
-					});
-				});
-			});
+			app.showEmailConfirmWarning();
 
 			socket.removeAllListeners('event:nodebb.ready');
 			socket.on('event:nodebb.ready', function(cacheBusters) {
@@ -569,7 +565,7 @@ app.cacheBuster = null;
 		});
 	};
 
-	function showEmailConfirmWarning() {
+	app.showEmailConfirmWarning = function(err) {
 		if (!config.requireEmailConfirmation || !app.user.uid) {
 			return;
 		}
@@ -587,7 +583,7 @@ app.cacheBuster = null;
 		} else if (!app.user['email:confirmed']) {
 			app.alert({
 				alert_id: 'email_confirm',
-				message: '[[error:email-not-confirmed]]',
+				message: err ? err.message : '[[error:email-not-confirmed]]',
 				type: 'warning',
 				timeout: 0,
 				clickfn: function() {
@@ -601,7 +597,7 @@ app.cacheBuster = null;
 				}
 			});
 		}
-	}
+	};
 
 	showWelcomeMessage = window.location.href.indexOf('loggedin') !== -1;
 

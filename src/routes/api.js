@@ -4,8 +4,7 @@ var express = require('express'),
 
 	posts = require('../posts'),
 	categories = require('../categories'),
-	uploadsController = require('../controllers/uploads'),
-	templatesController = require('../controllers/templates');
+	uploadsController = require('../controllers/uploads');
 
 module.exports =  function(app, middleware, controllers) {
 
@@ -17,7 +16,6 @@ module.exports =  function(app, middleware, controllers) {
 
 	router.get('/user/uid/:uid', middleware.checkGlobalPrivacySettings, controllers.accounts.getUserByUID);
 	router.get('/post/:pid', controllers.posts.getPost);
-	router.get('/get_templates_listing', templatesController.getTemplatesListing);
 	router.get('/categories/:cid/moderators', getModerators);
 	router.get('/recent/posts/:term?', getRecentPosts);
 
@@ -37,10 +35,8 @@ function getModerators(req, res, next) {
 
 
 function getRecentPosts(req, res, next) {
-	var uid = (req.user) ? req.user.uid : 0;
-
-	posts.getRecentPosts(uid, 0, 19, req.params.term, function (err, data) {
-		if(err) {
+	posts.getRecentPosts(req.uid, 0, 19, req.params.term, function (err, data) {
+		if (err) {
 			return next(err);
 		}
 

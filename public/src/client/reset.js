@@ -11,7 +11,7 @@ define('forum/reset', function() {
 
 		$('#reset').on('click', function() {
 			if (inputEl.val() && inputEl.val().indexOf('@') !== -1) {
-				socket.emit('user.reset.send', inputEl.val(), function(err, data) {
+				socket.emit('user.reset.send', inputEl.val(), function(err) {
 					if(err) {
 						return app.alertError(err.message);
 					}
@@ -24,6 +24,7 @@ define('forum/reset', function() {
 				successEl.addClass('hide').hide();
 				errorEl.removeClass('hide').show();
 			}
+			return false;
 		});
 	};
 

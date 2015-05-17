@@ -197,8 +197,10 @@ var async = require('async'),
 			plugins.fireHook('action:notification.pushed', {notification: notification, uids: uids});
 
 			var websockets = require('./socket.io');
-			for(var i=0; i<uids.length; ++i) {
-				websockets.in('uid_' + uids[i]).emit('event:new_notification', notification);
+			if (websockets.server) {
+				for(var i=0; i<uids.length; ++i) {
+					websockets.in('uid_' + uids[i]).emit('event:new_notification', notification);
+				}
 			}
 
 			callback();
@@ -207,12 +209,12 @@ var async = require('async'),
 
 	Notifications.pushGroup = function(notification, groupName, callback) {
 		callback = callback || function() {};
-		groups.get(groupName, {}, function(err, groupObj) {
-			if (err || !groupObj || !Array.isArray(groupObj.members) || !groupObj.members.length) {
+		groups.getMembers(groupName, 0, -1, function(err, members) {
+			if (err || !Array.isArray(members) || !members.length) {
 				return callback(err);
 			}
 
-			Notifications.push(notification, groupObj.members, callback);
+			Notifications.push(notification, members, callback);
 		});
 	};
 

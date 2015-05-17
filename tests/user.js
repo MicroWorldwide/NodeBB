@@ -36,6 +36,7 @@ describe('User', function() {
 	beforeEach(function(){
 		userData = {
 			username: 'John Smith',
+			fullname: 'John Smith McNamara',
 			password: 'swordfish',
 			email: 'john@example.com',
 			callback: undefined
@@ -195,7 +196,8 @@ describe('User', function() {
 	});
 
 	describe('passwordReset', function() {
-		var uid;
+		var uid,
+			code;
 		before(function(done) {
 			User.create({username: 'resetuser', password: '123456', email: 'reset@me.com'}, function(err, newUid) {
 				assert.ifError(err);
@@ -204,23 +206,78 @@ describe('User', function() {
 			});
 		});
 
-		it('should create a new reset code and reset password', function(done) {
+		it('.generate() should generate a new reset code', function(done) {
+			User.reset.generate(uid, function(err, _code) {
+				assert.ifError(err);
+				assert(_code);
+
+				code = _code;
+				done();
+			});
+		});
+
+		it('.validate() should ensure that this new code is valid', function(done) {
+			User.reset.validate(code, function(err, valid) {
+				assert.ifError(err);
+				assert.strictEqual(valid, true);
+				done();
+			});
+		});
+
+		it('.validate() should correctly identify an invalid code', function(done) {
+			User.reset.validate(code + 'abcdef', function(err, valid) {
+				assert.ifError(err);
+				assert.strictEqual(valid, false);
+				done();
+			});
+		});
+
+		it('.send() should create a new reset code and reset password', function(done) {
 			User.reset.send('reset@me.com', function(err, code) {
 				assert.ifError(err);
-				assert(code);
+				done();
+			});
+		});
 
-				User.reset.commit(code, 'newpassword', function(err) {
+		it('.commit() should update the user\'s password', function(done) {
+			User.reset.commit(code, 'newpassword', function(err) {
+				assert.ifError(err);
+
+				db.getObjectField('user:' + uid, 'password', function(err, newPassword) {
 					assert.ifError(err);
-
-					db.getObjectField('user:' + uid, 'password', function(err, newPassword) {
+					Password.compare('newpassword', newPassword, function(err, match) {
 						assert.ifError(err);
-						Password.compare('newpassword', newPassword, function(err, match) {
-							assert.ifError(err);
-							assert(match);
-							done();
-						});
+						assert(match);
+						done();
 					});
 				});
+			});
+		});
+	});
+
+	describe('hash methods', function() {
+
+		it('should return uid from email', function(done) {
+			User.getUidByEmail('john@example.com', function(err, uid) {
+				assert.ifError(err);
+				assert.equal(parseInt(uid, 10), parseInt(testUid, 10));
+				done();
+			});
+		});
+
+		it('should return uid from username', function(done) {
+			User.getUidByUsername('John Smith', function(err, uid) {
+				assert.ifError(err);
+				assert.equal(parseInt(uid, 10), parseInt(testUid, 10));
+				done();
+			});
+		});
+
+		it('should return uid from userslug', function(done) {
+			User.getUidByUserslug('john-smith', function(err, uid) {
+				assert.ifError(err);
+				assert.equal(parseInt(uid, 10), parseInt(testUid, 10));
+				done();
 			});
 		});
 	});

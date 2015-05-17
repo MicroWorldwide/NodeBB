@@ -1,8 +1,8 @@
 'use strict';
 
-/* globals define, app, ajaxify, utils, socket, templates, translator */
+/* globals define, app, ajaxify, utils, socket, templates */
 
-define('forum/chats', ['string', 'sounds', 'forum/infinitescroll'], function(S, sounds, infinitescroll) {
+define('forum/chats', ['components', 'string', 'sounds', 'forum/infinitescroll', 'translator'], function(components, S, sounds, infinitescroll, translator) {
 	var Chats = {
 		initialised: false
 	};
@@ -20,10 +20,8 @@ define('forum/chats', ['string', 'sounds', 'forum/infinitescroll'], function(S, 
 		Chats.addEventListeners();
 		Chats.setActive();
 
-		$(window).on('action:ajaxify.end', function() {
-			Chats.resizeMainWindow();
-			Chats.scrollToBottom(containerEl);
-		});
+		Chats.resizeMainWindow();
+		Chats.scrollToBottom($('.expanded-chat ul'));
 
 		Chats.initialised = true;
 	};
@@ -71,9 +69,14 @@ define('forum/chats', ['string', 'sounds', 'forum/infinitescroll'], function(S, 
 				uid = Chats.getRecipientUid();
 
 			if (app.previousUrl && app.previousUrl.match(/chats/)) {
+				var text = components.get('chat/input').val();
 				ajaxify.go('chats', function() {
 					app.openChat(username, uid);
 				}, true);
+
+				$(window).one('action:chat.loaded', function() {
+					components.get('chat/input').val(text);
+				});
 			} else {
 				window.history.go(-1);
 			}
@@ -124,7 +127,7 @@ define('forum/chats', ['string', 'sounds', 'forum/infinitescroll'], function(S, 
 	function onMessagesParsed(html) {
 		var newMessage = $(html);
 		newMessage.insertBefore($('.user-typing'));
-		newMessage.find('span.timeago').timeago();
+		newMessage.find('.timeago').timeago();
 		newMessage.find('img:not(".chat-user-image")').addClass('img-responsive');
 		Chats.scrollToBottom($('.expanded-chat .chat-content'));
 	}
@@ -165,16 +168,7 @@ define('forum/chats', ['string', 'sounds', 'forum/infinitescroll'], function(S, 
 		});
 
 		socket.on('event:user_status_change', function(data) {
-			var userEl = $('.chats-list li[data-uid="' + data.uid +'"]');
-
-			if (userEl.length) {
-				var statusEl = userEl.find('.status');
-				translator.translate('[[global:' + data.status + ']]', function(translated) {
-					statusEl.attr('class', 'fa fa-circle status ' + data.status)
-						.attr('title', translated)
-						.attr('data-original-title', translated);
-				});
-			}
+			app.updateUserStatus($('.chats-list [data-uid="' + data.uid + '"] [component="user/status"]'), data.status);
 		});
 	};
 
@@ -206,6 +200,9 @@ define('forum/chats', ['string', 'sounds', 'forum/infinitescroll'], function(S, 
 				message:msg
 			}, function(err) {
 				if (err) {
+					if (err.message === '[[error:email-not-confirmed-chat]]') {
+						return app.showEmailConfirmWarning(err);
+					}
 					return app.alertError(err.message);
 				}
 

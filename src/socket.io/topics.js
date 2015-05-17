@@ -17,7 +17,7 @@ var nconf = require('nconf'),
 	meta = require('../meta'),
 	events = require('../events'),
 	utils = require('../../public/src/utils'),
-	SocketPosts = require('./posts'),
+
 
 	SocketTopics = {};
 
@@ -39,6 +39,10 @@ SocketTopics.post = function(socket, data, callback) {
 	}, function(err, result) {
 		if (err) {
 			return callback(err);
+		}
+
+		if (data.lock) {
+			SocketTopics.doTopicAction('lock', 'event:topic_locked', socket, {tids: [result.topicData.tid], cid: result.topicData.cid});
 		}
 
 		callback(null, result.topicData);
@@ -200,39 +204,41 @@ SocketTopics.markAsUnreadForAll = function(socket, tids, callback) {
 				return callback(err);
 			}
 			topics.pushUnreadCount(socket.uid);
+			callback();
 		});
 	});
 };
 
 SocketTopics.delete = function(socket, data, callback) {
-	doTopicAction('delete', 'event:topic_deleted', socket, data, callback);
+	SocketTopics.doTopicAction('delete', 'event:topic_deleted', socket, data, callback);
 };
 
 SocketTopics.restore = function(socket, data, callback) {
-	doTopicAction('restore', 'event:topic_restored', socket, data, callback);
+	SocketTopics.doTopicAction('restore', 'event:topic_restored', socket, data, callback);
 };
 
 SocketTopics.purge = function(socket, data, callback) {
-	doTopicAction('purge', 'event:topic_purged', socket, data, callback);
+	SocketTopics.doTopicAction('purge', 'event:topic_purged', socket, data, callback);
 };
 
 SocketTopics.lock = function(socket, data, callback) {
-	doTopicAction('lock', 'event:topic_locked', socket, data, callback);
+	SocketTopics.doTopicAction('lock', 'event:topic_locked', socket, data, callback);
 };
 
 SocketTopics.unlock = function(socket, data, callback) {
-	doTopicAction('unlock', 'event:topic_unlocked', socket, data, callback);
+	SocketTopics.doTopicAction('unlock', 'event:topic_unlocked', socket, data, callback);
 };
 
 SocketTopics.pin = function(socket, data, callback) {
-	doTopicAction('pin', 'event:topic_pinned', socket, data, callback);
+	SocketTopics.doTopicAction('pin', 'event:topic_pinned', socket, data, callback);
 };
 
 SocketTopics.unpin = function(socket, data, callback) {
-	doTopicAction('unpin', 'event:topic_unpinned', socket, data, callback);
+	SocketTopics.doTopicAction('unpin', 'event:topic_unpinned', socket, data, callback);
 };
 
-function doTopicAction(action, event, socket, data, callback) {
+SocketTopics.doTopicAction = function(action, event, socket, data, callback) {
+	callback = callback || function() {};
 	if (!socket.uid) {
 		return;
 	}
@@ -274,7 +280,7 @@ function doTopicAction(action, event, socket, data, callback) {
 			});
 		});
 	}, callback);
-}
+};
 
 function emitToTopicAndCategory(event, data) {
 	websockets.in('topic_' + data.tid).emit(event, data);
@@ -312,7 +318,7 @@ SocketTopics.movePost = function(socket, data, callback) {
 				return callback(err);
 			}
 
-			SocketPosts.sendNotificationToPostOwner(data.pid, socket.uid, 'notifications:moved_your_post');
+			require('./posts').sendNotificationToPostOwner(data.pid, socket.uid, 'notifications:moved_your_post');
 			callback();
 		});
 	});
@@ -442,13 +448,16 @@ SocketTopics.loadMore = function(socket, data, callback) {
 		},
 		postCount: function(next) {
 			topics.getPostCount(data.tid, next);
+		},
+		topic: function(next) {
+			topics.getTopicFields(data.tid, ['deleted'], next);
 		}
 	}, function(err, results) {
 		if (err) {
 			return callback(err);
 		}
 
-		if (!results.privileges.read) {
+		if (!results.privileges.read || (parseInt(results.topic.deleted, 10) && !results.privileges.view_deleted)) {
 			return callback(new Error('[[error:no-privileges]]'));
 		}
 
@@ -465,11 +474,11 @@ SocketTopics.loadMore = function(socket, data, callback) {
 			}
 		}
 
-		var end = start + results.settings.postsPerPage - 1;
+		var stop = start + results.settings.postsPerPage - 1;
 
 		async.parallel({
 			posts: function(next) {
-				topics.getTopicPosts(data.tid, set, start, end, socket.uid, reverse, next);
+				topics.getTopicPosts(data.tid, set, start, stop, socket.uid, reverse, next);
 			},
 			privileges: function(next) {
 				next(null, results.privileges);
@@ -485,33 +494,33 @@ SocketTopics.loadMore = function(socket, data, callback) {
 };
 
 SocketTopics.loadMoreUnreadTopics = function(socket, data, callback) {
-	if(!data || !data.after) {
+	if (!data || !data.after) {
 		return callback(new Error('[[error:invalid-data]]'));
 	}
 
 	var start = parseInt(data.after, 10),
-		end = start + 9;
+		stop = start + 9;
 
-	topics.getUnreadTopics(socket.uid, start, end, callback);
+	topics.getUnreadTopics(socket.uid, start, stop, callback);
 };
 
 SocketTopics.loadMoreFromSet = function(socket, data, callback) {
-	if(!data || !data.after || !data.set) {
+	if (!data || !data.after || !data.set) {
 		return callback(new Error('[[error:invalid-data]]'));
 	}
 
 	var start = parseInt(data.after, 10),
-		end = start + 9;
+		stop = start + 9;
 
-	topics.getTopicsFromSet(data.set, socket.uid, start, end, callback);
+	topics.getTopicsFromSet(data.set, socket.uid, start, stop, callback);
 };
 
 SocketTopics.loadTopics = function(socket, data, callback) {
-	if(!data || !data.set || !utils.isNumber(data.start) || !utils.isNumber(data.end)) {
+	if (!data || !data.set || !utils.isNumber(data.start) || !utils.isNumber(data.stop)) {
 		return callback(new Error('[[error:invalid-data]]'));
 	}
 
-	topics.getTopicsFromSet(data.set, socket.uid, data.start, data.end, callback);
+	topics.getTopicsFromSet(data.set, socket.uid, data.start, data.stop, callback);
 };
 
 SocketTopics.getPageCount = function(socket, tid, callback) {
@@ -539,14 +548,23 @@ SocketTopics.loadMoreTags = function(socket, data, callback) {
 	}
 
 	var start = parseInt(data.after, 10),
-		end = start + 99;
+		stop = start + 99;
 
-	topics.getTags(start, end, function(err, tags) {
+	topics.getTags(start, stop, function(err, tags) {
 		if (err) {
 			return callback(err);
 		}
 
-		callback(null, {tags: tags, nextStart: end + 1});
+		callback(null, {tags: tags, nextStart: stop + 1});
+	});
+};
+
+SocketTopics.isModerator = function(socket, tid, callback) {
+	topics.getTopicField(tid, 'cid', function(err, cid) {
+		if (err) {
+			return callback(err);
+		}
+		user.isModerator(socket.uid, cid, callback);
 	});
 };
 

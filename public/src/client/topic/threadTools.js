@@ -1,50 +1,51 @@
 'use strict';
 
-/* globals define, app, translator, ajaxify, socket, bootbox */
+/* globals define, app, ajaxify, socket, bootbox */
 
-define('forum/topic/threadTools', ['forum/topic/fork', 'forum/topic/move'], function(fork, move) {
+define('forum/topic/threadTools', ['forum/topic/fork', 'forum/topic/move', 'components', 'translator'], function(fork, move, components, translator) {
 
 	var ThreadTools = {};
 
-	ThreadTools.init = function(tid, threadState) {
-		ThreadTools.threadState = threadState;
-
-		if (threadState.locked) {
-			ThreadTools.setLockedState({tid: tid, isLocked: true});
-		}
-
-		if (threadState.deleted) {
-			ThreadTools.setDeleteState({tid: tid, isDelete: true});
-		}
-
-		if (threadState.pinned) {
-			ThreadTools.setPinnedState({tid: tid, isPinned: true});
-		}
-
-		$('.delete_thread').on('click', function() {
-			topicCommand(threadState.deleted ? 'restore' : 'delete', tid);
+	ThreadTools.init = function(tid) {
+		components.get('topic/delete').on('click', function() {
+			topicCommand('delete', tid);
 			return false;
 		});
 
-		$('.purge_thread').on('click', function() {
+		components.get('topic/restore').on('click', function() {
+			topicCommand('restore', tid);
+			return false;
+		});
+
+		components.get('topic/purge').on('click', function() {
 			topicCommand('purge', tid);
 			return false;
 		});
 
-		$('.lock_thread').on('click', function() {
-			socket.emit(threadState.locked ? 'topics.unlock' : 'topics.lock', {tids: [tid], cid: ajaxify.variables.get('category_id')});
+		components.get('topic/lock').on('click', function() {
+			socket.emit('topics.lock', {tids: [tid], cid: ajaxify.variables.get('category_id')});
 			return false;
 		});
 
-		$('.pin_thread').on('click', function() {
-			socket.emit(threadState.pinned ? 'topics.unpin' : 'topics.pin', {tids: [tid], cid: ajaxify.variables.get('category_id')});
+		components.get('topic/unlock').on('click', function() {
+			socket.emit('topics.unlock', {tids: [tid], cid: ajaxify.variables.get('category_id')});
 			return false;
 		});
 
-		$('.markAsUnreadForAll').on('click', function() {
+		components.get('topic/pin').on('click', function() {
+			socket.emit('topics.pin', {tids: [tid], cid: ajaxify.variables.get('category_id')});
+			return false;
+		});
+
+		components.get('topic/unpin').on('click', function() {
+			socket.emit('topics.unpin', {tids: [tid], cid: ajaxify.variables.get('category_id')});
+			return false;
+		});
+
+		components.get('topic/mark-unread-for-all').on('click', function() {
 			var btn = $(this);
 			socket.emit('topics.markAsUnreadForAll', [tid], function(err) {
-				if(err) {
+				if (err) {
 					return app.alertError(err.message);
 				}
 				app.alertSuccess('[[topic:markAsUnreadForAll.success]]');
@@ -53,16 +54,20 @@ define('forum/topic/threadTools', ['forum/topic/fork', 'forum/topic/move'], func
 			return false;
 		});
 
-		$('.move_thread').on('click', function(e) {
+		components.get('topic/move').on('click', function(e) {
 			move.init([tid], ajaxify.variables.get('category_id'));
 			return false;
 		});
 
 		fork.init();
 
-		$('.posts').on('click', '.follow', function() {
+		components.get('topic').on('click', '[component="topic/follow"], [component="topic/unfollow"]', follow);
+		components.get('topic/follow').off('click').on('click', follow);
+		components.get('topic/unfollow').off('click').on('click', follow);
+
+		function follow() {
 			socket.emit('topics.toggleFollow', tid, function(err, state) {
-				if(err) {
+				if (err) {
 					return app.alert({
 						type: 'danger',
 						alert_id: 'topic_follow',
@@ -83,7 +88,7 @@ define('forum/topic/threadTools', ['forum/topic/fork', 'forum/topic/move'], func
 			});
 
 			return false;
-		});
+		}
 	};
 
 	function topicCommand(command, tid) {
@@ -97,71 +102,50 @@ define('forum/topic/threadTools', ['forum/topic/fork', 'forum/topic/move'], func
 	}
 
 	ThreadTools.setLockedState = function(data) {
-		var threadEl = $('#post-container');
-		if (parseInt(data.tid, 10) === parseInt(threadEl.attr('data-tid'), 10)) {
-			var isLocked = data.isLocked && !app.user.isAdmin;
-
-			$('.lock_thread').translateHtml('<i class="fa fa-fw fa-' + (data.isLocked ? 'un': '') + 'lock"></i> [[topic:thread_tools.' + (data.isLocked ? 'un': '') + 'lock]]');
-
-			translator.translate(isLocked ? '[[topic:locked]]' : '[[topic:reply]]', function(translated) {
-				var className = isLocked ? 'fa-lock' : 'fa-reply';
-				threadEl.find('.post_reply').html('<i class="fa ' + className + '"></i> ' + translated);
-				$('.topic-main-buttons .post_reply').attr('disabled', isLocked).html(isLocked ? '<i class="fa fa-lock"></i> ' + translated : translated);
-			});
-
-			threadEl.find('.quote, .edit, .delete').toggleClass('hidden', isLocked);
-			$('.topic-title i.fa-lock').toggleClass('hide', !data.isLocked);
-			ThreadTools.threadState.locked = data.isLocked;
-		}
-	};
-
-	ThreadTools.setDeleteState = function(data) {
-		var threadEl = $('#post-container');
+		var threadEl = components.get('topic');
 		if (parseInt(data.tid, 10) !== parseInt(threadEl.attr('data-tid'), 10)) {
 			return;
 		}
 
-		$('.delete_thread span').translateHtml('<i class="fa fa-fw ' + (data.isDelete ? 'fa-history' : 'fa-trash-o') + '"></i> [[topic:thread_tools.' + (data.isDelete ? 'restore' : 'delete') + ']]');
+		var isLocked = data.isLocked && !app.user.isAdmin;
+
+		components.get('topic/lock').toggleClass('hidden', data.isLocked);
+		components.get('topic/unlock').toggleClass('hidden', !data.isLocked);
+		components.get('topic/reply').toggleClass('hidden', isLocked);
+		components.get('topic/reply/locked').toggleClass('hidden', !isLocked);
+
+		threadEl.find('[component="post/reply"], [component="post/quote"], [component="post/edit"], [component="post/delete"]').toggleClass('hidden', isLocked);
+		$('[component="post/header"] i.fa-lock').toggleClass('hidden', !data.isLocked);
+	};
+
+	ThreadTools.setDeleteState = function(data) {
+		var threadEl = components.get('topic');
+		if (parseInt(data.tid, 10) !== parseInt(threadEl.attr('data-tid'), 10)) {
+			return;
+		}
+
+		components.get('topic/delete').toggleClass('hidden', data.isDelete);
+		components.get('topic/restore').toggleClass('hidden', !data.isDelete);
+		components.get('topic/purge').toggleClass('hidden', !data.isDelete);
+		components.get('topic/deleted/message').toggleClass('hidden', !data.isDelete);
 
 		threadEl.toggleClass('deleted', data.isDelete);
-		ThreadTools.threadState.deleted = data.isDelete;
-		$('.purge_thread').toggleClass('hidden', !data.isDelete);
-
-		if (data.isDelete) {
-			translator.translate('[[topic:deleted_message]]', function(translated) {
-				$('<div id="thread-deleted" class="alert alert-warning">' + translated + '</div>').insertBefore(threadEl);
-			});
-		} else {
-			$('#thread-deleted').remove();
-		}
 	};
 
 	ThreadTools.setPinnedState = function(data) {
-		var threadEl = $('#post-container');
-		if (parseInt(data.tid, 10) === parseInt(threadEl.attr('data-tid'), 10)) {
-			translator.translate('<i class="fa fa-fw fa-thumb-tack"></i> [[topic:thread_tools.' + (data.isPinned ? 'unpin' : 'pin') + ']]', function(translated) {
-				$('.pin_thread').html(translated);
-				ThreadTools.threadState.pinned = data.isPinned;
-			});
-			$('.topic-title i.fa-thumb-tack').toggleClass('hide', !data.isPinned);
+		var threadEl = components.get('topic');
+		if (parseInt(data.tid, 10) !== parseInt(threadEl.attr('data-tid'), 10)) {
+			return;
 		}
+
+		components.get('topic/pin').toggleClass('hidden', data.isPinned);
+		components.get('topic/unpin').toggleClass('hidden', !data.isPinned);
+		$('[component="post/header"] i.fa-thumb-tack').toggleClass('hidden', !data.isPinned);
 	};
 
 	function setFollowState(state) {
-		var title = state ? '[[topic:unwatch.title]]' : '[[topic:watch.title]]';
-		var iconClass = state ? 'fa fa-eye-slash' : 'fa fa-eye';
-		var text = state ? '[[topic:unwatch]]' : '[[topic:watch]]';
-
-		var followEl = $('.posts .follow');
-
-		translator.translate(title, function(titleTranslated) {
-			followEl.attr('title', titleTranslated).find('i').attr('class', iconClass);
-			followEl.find('span').text(text);
-
-			translator.translate(followEl.html(), function(translated) {
-				followEl.html(translated);
-			});
-		});
+		components.get('topic/follow').toggleClass('hidden', state);
+		components.get('topic/unfollow').toggleClass('hidden', !state);
 	}
 
 

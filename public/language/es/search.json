@@ -1,8 +1,8 @@
 {
     "results_matching": "%1 resuldado(s) coinciden con \"%2\". (%3 segundos)",
     "no-matches": "No se encontraron coincidencias",
+    "advanced-search": "Búsqueda Avanzada",
     "in": "En",
-    "by": "Por",
     "titles": "Títulos",
     "titles-posts": "Títulos y publicaciones",
     "posted-by": "Publicado por",
@@ -32,9 +32,9 @@
     "category": "Categoría",
     "descending": "En orden descendente",
     "ascending": "En orden ascendente",
-    "save-preferences": "Save preferences",
-    "clear-preferences": "Clear preferences",
-    "search-preferences-saved": "Search preferences saved",
-    "search-preferences-cleared": "Search preferences cleared",
-    "show-results-as": "Show results as"
+    "save-preferences": "Guardar preferencias",
+    "clear-preferences": "Descartar preferencias",
+    "search-preferences-saved": "Preferencias de búsqueda guardadas",
+    "search-preferences-cleared": "Preferencias de búsqueda descartadas",
+    "show-results-as": "Mostrar resultados como"
 }

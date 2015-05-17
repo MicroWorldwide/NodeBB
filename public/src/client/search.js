@@ -8,9 +8,9 @@ define('forum/search', ['search', 'autocomplete'], function(searchModule, autoco
 	Search.init = function() {
 		var searchQuery = $('#results').attr('data-search-query');
 
-		$('#advanced-search #search-input').val(searchQuery);
+		$('#search-input').val(searchQuery);
 
-		var searchIn = $('#advanced-search #search-in');
+		var searchIn = $('#search-in');
 
 		fillOutForm();
 
@@ -23,7 +23,7 @@ define('forum/search', ['search', 'autocomplete'], function(searchModule, autoco
 		$('#advanced-search').off('submit').on('submit', function(e) {
 			e.preventDefault();
 
-			var input = $(this).find('#search-input');
+			var input = $('#search-input');
 
 			var searchData = getSearchData();
 			searchData.term = input.val();
@@ -41,7 +41,7 @@ define('forum/search', ['search', 'autocomplete'], function(searchModule, autoco
 	function getSearchData() {
 		var form = $('#advanced-search');
 		var searchData = {
-			in: form.find('#search-in').val()
+			in: $('#search-in').val()
 		};
 
 		if (searchData.in === 'posts' || searchData.in === 'titlesposts' || searchData.in === 'titles') {
@@ -116,21 +116,19 @@ define('forum/search', ['search', 'autocomplete'], function(searchModule, autoco
 		if (!searchQuery) {
 			return;
 		}
-		var searchTerms = searchQuery.split(' ');
-		var regexes = [];
-		for (var i=0; i<searchTerms.length; ++i) {
-			var regex = new RegExp(searchTerms[i], 'gi');
-			regexes.push({regex: regex, term: searchTerms[i]});
-		}
 
-		$('.search-result-text').each(function() {
-			var result = $(this);
-			var text = result.html();
-			for(var i=0; i<regexes.length; ++i) {
-				text = text.replace(regexes[i].regex, '<strong>' + regexes[i].term + '</strong>');
-			}
-			result.html(text).find('img').addClass('img-responsive');
-		});
+		try {
+			var regexStr = searchQuery.trim().split(' ').join('|');
+			var regex = new RegExp('(' + regexStr + ')', 'gi');
+
+			$('.search-result-text').each(function() {
+				var result = $(this);
+				var text = result.html().replace(regex, '<strong>$1</strong>');
+				result.html(text).find('img').addClass('img-responsive');
+			});
+		} catch(e) {
+			return;
+		}
 	}
 
 	function handleSavePreferences() {
@@ -142,6 +140,9 @@ define('forum/search', ['search', 'autocomplete'], function(searchModule, autoco
 
 		$('#clear-preferences').on('click', function() {
 			localStorage.removeItem('search-preferences');
+			var query = $('#search-input').val();
+			$('#advanced-search')[0].reset();
+			$('#search-input').val(query);
 			app.alertSuccess('[[search:search-preferences-cleared]]');
 			return false;
 		});

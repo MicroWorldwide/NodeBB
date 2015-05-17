@@ -24,18 +24,27 @@ SocketUser.exists = function(socket, data, callback) {
 };
 
 SocketUser.deleteAccount = function(socket, data, callback) {
-	if (socket.uid) {
-		user.isAdministrator(socket.uid, function(err, isAdmin) {
-			if (err || isAdmin) {
-				return callback(err || new Error('[[error:cant-delete-admin]]'));
-			}
-			user.deleteAccount(socket.uid, callback);
-		});
+	if (!socket.uid) {
+		return;
 	}
+	user.isAdministrator(socket.uid, function(err, isAdmin) {
+		if (err || isAdmin) {
+			return callback(err || new Error('[[error:cant-delete-admin]]'));
+		}
+
+		socket.broadcast.emit('event:user_status_change', {uid: socket.uid, status: 'offline'});
+		user.deleteAccount(socket.uid, function(err) {
+			if (err) {
+				return callback(err);
+			}
+			websockets.in('uid_' + socket.uid).emit('event:logout');
+			callback();
+		});
+	});
 };
 
 SocketUser.emailExists = function(socket, data, callback) {
-	if(data && data.email) {
+	if (data && data.email) {
 		user.email.exists(data.email, callback);
 	}
 };
@@ -51,8 +60,7 @@ SocketUser.emailConfirm = function(socket, data, callback) {
 				return;
 			}
 
-			user.email.verify(socket.uid, email);
-			callback();
+			user.email.sendValidationEmail(socket.uid, email, callback);
 		});
 	}
 };
@@ -136,7 +144,7 @@ SocketUser.checkStatus = function(socket, uid, callback) {
 };
 
 SocketUser.changePassword = function(socket, data, callback) {
-	if (!data || !data.uid) {
+	if (!data || !data.uid || data.newPassword.length < meta.config.minimumPasswordLength) {
 		return callback(new Error('[[error:invalid-data]]'));
 	}
 	if (!socket.uid) {
@@ -261,19 +269,27 @@ SocketUser.changePicture = function(socket, data, callback) {
 	});
 };
 
-SocketUser.uploadProfileImageFromUrl = function(socket, url, callback) {
-	if (!socket.uid || !url) {
+SocketUser.uploadProfileImageFromUrl = function(socket, data, callback) {
+	function upload() {
+		user.uploadFromUrl(data.uid, data.url, function(err, uploadedImage) {
+			callback(err, uploadedImage ? uploadedImage.url : null);
+		});
+	}
+
+	if (!socket.uid || !data.url || !data.uid) {
 		return;
 	}
 
-	plugins.fireHook('filter:uploadImage', {image: {url: url}, uid: socket.uid}, function(err, data) {
-		if (err) {
-			return callback(err);
+	if (parseInt(socket.uid, 10) === parseInt(data.uid, 10)) {
+		return upload();
+	}
+
+	user.isAdministrator(socket.uid, function(err, isAdmin) {
+		if (err || !isAdmin) {
+			return callback(err || new Error('[[error:not-allowed]]'));
 		}
 
-		user.setUserFields(socket.uid, {uploadedpicture: data.url, picture: data.url}, function(err) {
-			callback(err, data.url);
-		});
+		upload();
 	});
 };
 
@@ -281,7 +297,7 @@ SocketUser.follow = function(socket, data, callback) {
 	if (!socket.uid || !data) {
 		return;
 	}
-
+	var userData;
 	async.waterfall([
 		function(next) {
 			toggleFollow('follow', socket.uid, data.uid, next);
@@ -289,7 +305,8 @@ SocketUser.follow = function(socket, data, callback) {
 		function(next) {
 			user.getUserFields(socket.uid, ['username', 'userslug'], next);
 		},
-		function(userData, next) {
+		function(_userData, next) {
+			userData = _userData;
 			notifications.create({
 				bodyShort: '[[notifications:user_started_following_you, ' + userData.username + ']]',
 				nid: 'follow:' + data.uid + ':uid:' + socket.uid,
@@ -297,6 +314,7 @@ SocketUser.follow = function(socket, data, callback) {
 			}, next);
 		},
 		function(notification, next) {
+			notification.user = userData;
 			notifications.push(notification, [data.uid], next);
 		}
 	], callback);
@@ -321,26 +339,6 @@ function toggleFollow(method, uid, theiruid, callback) {
 		callback();
 	});
 }
-
-SocketUser.getSettings = function(socket, data, callback) {
-	if (socket.uid) {
-		if (socket.uid === parseInt(data.uid, 10)) {
-			return user.getSettings(socket.uid, callback);
-		}
-
-		user.isAdministrator(socket.uid, function(err, isAdmin) {
-			if (err) {
-				return callback(err);
-			}
-
-			if (!isAdmin) {
-				return callback(new Error('[[error:no-privileges]]'));
-			}
-
-			user.getSettings(data.uid, callback);
-		});
-	}
-};
 
 SocketUser.saveSettings = function(socket, data, callback) {
 	if (!socket.uid || !data) {
@@ -395,7 +393,7 @@ SocketUser.getUnreadChatCount = function(socket, data, callback) {
 };
 
 SocketUser.loadMore = function(socket, data, callback) {
-	if(!data || !data.set || parseInt(data.after, 10) < 0) {
+	if (!data || !data.set || parseInt(data.after, 10) < 0) {
 		return callback(new Error('[[error:invalid-data]]'));
 	}
 
@@ -404,29 +402,32 @@ SocketUser.loadMore = function(socket, data, callback) {
 	}
 
 	var start = parseInt(data.after, 10),
-		end = start + 19;
+		stop = start + 19;
 
-	user.getUsersFromSet(data.set, socket.uid, start, end, function(err, userData) {
+	async.parallel({
+		isAdmin: function(next) {
+			user.isAdministrator(socket.uid, next);
+		},
+		users: function(next) {
+			user.getUsersFromSet(data.set, socket.uid, start, stop, next);
+		}
+	}, function(err, results) {
 		if (err) {
 			return callback(err);
 		}
 
-		user.isAdministrator(socket.uid, function (err, isAdministrator) {
-			if (err) {
-				return callback(err);
-			}
 
-			if (!isAdministrator && data.set === 'users:online') {
-				userData = userData.filter(function(item) {
-					return item.status !== 'offline';
-				});
-			}
-
-			callback(null, {
-				users: userData,
-				nextStart: end + 1
+		if (!results.isAdmin && data.set === 'users:online') {
+			results.users = results.users.filter(function(user) {
+				return user.status !== 'offline';
 			});
-		});
+		}
+		var result = {
+			users: results.users,
+			nextStart: stop + 1,
+		};
+		result['route_' + data.set] = true;
+		callback(null, result);
 	});
 };
 

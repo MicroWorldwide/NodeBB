@@ -2,6 +2,7 @@
 
 var fs = require('fs'),
 	path = require('path'),
+	nconf = require('nconf'),
 	file = require('../../file'),
 	plugins = require('../../plugins');
 
@@ -31,13 +32,13 @@ uploadsController.uploadFavicon = function(req, res, next) {
 	var allowedTypes = ['image/x-icon', 'image/vnd.microsoft.icon'];
 
 	if (validateUpload(req, res, next, uploadedFile, allowedTypes)) {
-		file.saveFileToLocal('favicon.ico', 'files', uploadedFile.path, function(err, image) {
+		file.saveFileToLocal('favicon.ico', 'system', uploadedFile.path, function(err, image) {
 			fs.unlink(uploadedFile.path);
 			if (err) {
 				return next(err);
 			}
 
-			res.json([{name: uploadedFile.name, url: image.url}]);
+			res.json([{name: uploadedFile.name, url: nconf.get('relative_path') + image.url}]);
 		});
 	}
 };
@@ -55,7 +56,7 @@ function upload(name, req, res, next) {
 	var allowedTypes = ['image/png', 'image/jpeg', 'image/pjpeg', 'image/jpg', 'image/gif'];
 	if (validateUpload(req, res, next, uploadedFile, allowedTypes)) {
 		var filename = name + path.extname(uploadedFile.name);
-		uploadImage(filename, 'files', uploadedFile, req, res, next);
+		uploadImage(filename, 'system', uploadedFile, req, res, next);
 	}
 }
 
@@ -76,8 +77,7 @@ function uploadImage(filename, folder, uploadedFile, req, res, next) {
 		if (err) {
 			return next(err);
 		}
-
-		res.json([{name: uploadedFile.name, url: image.url}]);
+		res.json([{name: uploadedFile.name, url: image.url.startsWith('http') ? image.url : nconf.get('relative_path') + image.url}]);
 	}
 
 	if (plugins.hasListeners('filter:uploadImage')) {

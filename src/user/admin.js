@@ -15,8 +15,8 @@ module.exports = function(User) {
 		}
 	};
 
-	User.getIPs = function(uid, end, callback) {
-		db.getSortedSetRevRange('uid:' + uid + ':ip', 0, end, function(err, ips) {
+	User.getIPs = function(uid, stop, callback) {
+		db.getSortedSetRevRange('uid:' + uid + ':ip', 0, stop, function(err, ips) {
 			if(err) {
 				return callback(err);
 			}
@@ -32,9 +32,12 @@ module.exports = function(User) {
 
 		async.waterfall([
 			function(next) {
-				db.getObjectValues('username:uid', next);
+				db.getSortedSetRangeWithScores('username:uid', 0, -1, next);
 			},
-			function(uids, next) {
+			function(users, next) {
+				var uids = users.map(function(user) {
+					return user.score;
+				});
 				User.getMultipleUserFields(uids, ['uid', 'email', 'username'], next);
 			},
 			function(usersData, next) {

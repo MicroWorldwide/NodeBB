@@ -1,8 +1,8 @@
 {
     "results_matching": "%1 tane “%2“ bulundu (%3 saniye)",
     "no-matches": "Hiç eşleşme bulunamadı",
+    "advanced-search": "Gelişmiş Arama",
     "in": "Konum:",
-    "by": "Kim Tarafından :",
     "titles": "Başlıklar",
     "titles-posts": "Başlıklar ve Yayınlar",
     "posted-by": "Gönderen",
@@ -32,9 +32,9 @@
     "category": "Kategori",
     "descending": "Azalan düzene göre",
     "ascending": "Artan düzene göre",
-    "save-preferences": "Save preferences",
-    "clear-preferences": "Clear preferences",
-    "search-preferences-saved": "Search preferences saved",
-    "search-preferences-cleared": "Search preferences cleared",
-    "show-results-as": "Show results as"
+    "save-preferences": "Tercihleri Kaydet",
+    "clear-preferences": "Tercihleri Sil",
+    "search-preferences-saved": "Kaydedilmiş Arama tercihleri",
+    "search-preferences-cleared": "Silinmiş Arama Tercihleri",
+    "show-results-as": "Sonuçları göster : "
 }

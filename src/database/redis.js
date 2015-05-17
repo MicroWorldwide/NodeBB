@@ -9,7 +9,7 @@
 		utils = require('./../../public/src/utils.js'),
 		redis,
 		connectRedis,
-		reds,
+		redisSearch,
 		redisClient,
 		postSearch,
 		topicSearch;
@@ -28,7 +28,8 @@
 		{
 			name: 'redis:password',
 			description: 'Password of your Redis database',
-			hidden: true
+			hidden: true,
+			before: function(value) { value = value || nconf.get('redis:password') || ''; return value; }
 		},
 		{
 			name: "redis:database",
@@ -41,7 +42,7 @@
 		try {
 			redis = require('redis');
 			connectRedis = require('connect-redis')(session);
-			reds = require('reds');
+			redisSearch = require('redisearch');
 		} catch (err) {
 			winston.error('Unable to initialize Redis! Is Redis installed? Error :' + err.message);
 			process.exit();
@@ -56,12 +57,8 @@
 			ttl: 60 * 60 * 24 * 14
 		});
 
-		reds.createClient = function () {
-			return reds.client || (reds.client = redisClient);
-		};
-
-		module.postSearch = reds.createSearch('nodebbpostsearch');
-		module.topicSearch = reds.createSearch('nodebbtopicsearch');
+		module.postSearch = redisSearch.createSearch('nodebbpostsearch', redisClient);
+		module.topicSearch = redisSearch.createSearch('nodebbtopicsearch', redisClient);
 
 		require('./redis/main')(redisClient, module);
 		require('./redis/hash')(redisClient, module);
@@ -116,6 +113,28 @@
 
 	module.close = function() {
 		redisClient.quit();
+	};
+
+	module.info = function(cxn, callback) {
+		cxn.info(function (err, data) {
+			if (err) {
+				return callback(err);
+			}
+
+			var lines = data.toString().split("\r\n").sort();
+			var redisData = {};
+			lines.forEach(function (line) {
+				var parts = line.split(':');
+				if (parts[1]) {
+					redisData[parts[0]] = parts[1];
+				}
+			});
+
+			redisData.raw = JSON.stringify(redisData, null, 4);
+			redisData.redis = true;
+
+			callback(null, redisData);
+		});
 	};
 
 	module.helpers = module.helpers || {};

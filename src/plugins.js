@@ -11,7 +11,7 @@ var fs = require('fs'),
 	db = require('./database'),
 	emitter = require('./emitter'),
 	meta = require('./meta'),
-	translator = require('../public/src/translator'),
+	translator = require('../public/src/modules/translator'),
 	utils = require('../public/src/utils'),
 	hotswap = require('./hotswap'),
 
@@ -39,9 +39,10 @@ var fs = require('fs'),
 		Plugins.libraryPaths.push(libraryPath);
 	};
 
-	Plugins.init = function(nbbApp, nbbMiddleware) {
+	Plugins.init = function(nbbApp, nbbMiddleware, callback) {
+		callback = callback || function() {};
 		if (Plugins.initialized) {
-			return;
+			return callback();
 		}
 
 		app = nbbApp;
@@ -55,7 +56,7 @@ var fs = require('fs'),
 		Plugins.reload(function(err) {
 			if (err) {
 				winston.error('[plugins] NodeBB encountered a problem while loading plugins', err.message);
-				return;
+				return callback(err);
 			}
 
 			if (global.env === 'development') {
@@ -64,20 +65,13 @@ var fs = require('fs'),
 
 			Plugins.initialized = true;
 			emitter.emit('plugins:loaded');
+			callback();
 		});
 
 		Plugins.registerHook('core', {
 			hook: 'static:app.load',
 			method: addLanguages
 		});
-	};
-
-	Plugins.ready = function(callback) {
-		if (!Plugins.initialized) {
-			emitter.once('plugins:loaded', callback);
-		} else {
-			callback();
-		}
 	};
 
 	Plugins.reload = function(callback) {
@@ -120,19 +114,23 @@ var fs = require('fs'),
 				});
 
 				next();
-			},
-			async.apply(Plugins.reloadRoutes)
+			}
 		], callback);
 	};
 
 	Plugins.reloadRoutes = function(callback) {
+		callback = callback || function() {};
 		var router = express.Router();
 		router.hotswapId = 'plugins';
 		router.render = function() {
 			app.render.apply(app, arguments);
 		};
 
-		Plugins.fireHook('static:app.load', {app: app, router: router, middleware: middleware, controllers: controllers}, function() {
+		Plugins.fireHook('static:app.load', {app: app, router: router, middleware: middleware, controllers: controllers}, function(err) {
+			if (err) {
+				return winston.error('[plugins] Encountered error while executing post-router plugins hooks: ' + err.message);
+			}
+
 			hotswap.replace('plugins', router);
 			winston.verbose('[plugins] All plugins reloaded and rerouted');
 			callback();
@@ -168,7 +166,7 @@ var fs = require('fs'),
 
 	Plugins.getAll = function(callback) {
 		var url = (nconf.get('registry') || 'https://packages.nodebb.org') + '/api/v1/plugins?version=' + require('../package.json').version;
-		
+
 		require('request')(url, function(err, res, body) {
 			var plugins = [];
 
@@ -209,6 +207,7 @@ var fs = require('fs'),
 					pluginMap[plugin.id].description = plugin.description;
 					pluginMap[plugin.id].url = pluginMap[plugin.id].url || plugin.url;
 					pluginMap[plugin.id].installed = true;
+					pluginMap[plugin.id].isTheme = !!plugin.id.match('nodebb-theme-');
 					pluginMap[plugin.id].error = plugin.error || false;
 					pluginMap[plugin.id].active = plugin.active;
 					pluginMap[plugin.id].version = plugin.version;
@@ -244,15 +243,6 @@ var fs = require('fs'),
 		});
 	};
 
-	function getLatestVersion(versions) {
-		for(var version in versions) {
-			if (versions.hasOwnProperty(version) && versions[version] === 'latest') {
-				return version;
-			}
-		}
-		return '';
-	}
-
 	Plugins.showInstalled = function(callback) {
 		var npmPluginPath = path.join(__dirname, '../node_modules');
 
@@ -261,9 +251,9 @@ var fs = require('fs'),
 
 			function(dirs, next) {
 				dirs = dirs.filter(function(dir){
-					return dir.startsWith('nodebb-plugin-') || 
-						dir.startsWith('nodebb-widget-') || 
-						dir.startsWith('nodebb-rewards-') || 
+					return dir.startsWith('nodebb-plugin-') ||
+						dir.startsWith('nodebb-widget-') ||
+						dir.startsWith('nodebb-rewards-') ||
 						dir.startsWith('nodebb-theme-');
 				}).map(function(dir){
 					return path.join(npmPluginPath, dir);
@@ -271,11 +261,7 @@ var fs = require('fs'),
 
 				async.filter(dirs, function(dir, callback){
 					fs.stat(dir, function(err, stats){
-						if (err) {
-							return callback(false);
-						}
-
-						callback(stats.isDirectory());
+						callback(!err && stats.isDirectory());
 					});
 				}, function(plugins){
 					next(null, plugins);
@@ -286,25 +272,11 @@ var fs = require('fs'),
 				var plugins = [];
 
 				async.each(files, function(file, next) {
-					var configPath;
-
 					async.waterfall([
 						function(next) {
 							Plugins.loadPluginInfo(file, next);
 						},
 						function(pluginData, next) {
-							var packageName = path.basename(file);
-
-							if (!pluginData) {
-								winston.warn("Plugin `" + packageName + "` is corrupted or invalid. Please check either package.json or plugin.json for errors.");
-								return next(null, {
-									id: packageName,
-									installed: true,
-									error: true,
-									active: null
-								});
-							}
-
 							Plugins.isActive(pluginData.name, function(err, active) {
 								if (err) {
 									return next(new Error('no-active-state'));
@@ -318,12 +290,12 @@ var fs = require('fs'),
 								next(null, pluginData);
 							});
 						}
-					], function(err, config) {
+					], function(err, pluginData) {
 						if (err) {
 							return next(); // Silently fail
 						}
 
-						plugins.push(config);
+						plugins.push(pluginData);
 						next();
 					});
 				}, function(err) {
@@ -356,7 +328,7 @@ var fs = require('fs'),
 				winston.verbose('[plugins] Plugin libraries removed from Node.js cache');
 
 				next();
-			},
+			}
 		], next);
 	};
 

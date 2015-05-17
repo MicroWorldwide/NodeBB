@@ -19,6 +19,10 @@
 					<div><strong id="pageViewsThisMonth"></strong></div>
 					<div>Page views This Month</div>
 				</div>
+				<div class="text-center pull-left monthly-pageviews">
+					<div><strong id="pageViewsPastDay"></strong></div>
+					<div>Page views in last 24 hours</div>
+				</div>
 			</div>
 		</div>
 
@@ -87,6 +91,7 @@
 			</div>
 		</div>
 	</div>
+
 	<div class="col-lg-3">
 		<div class="panel panel-default">
 			<div class="panel-heading">Anonymous vs Registered Users</div>
@@ -106,10 +111,10 @@
 			<div class="panel-body">
 				<div class="graph-container pie-chart legend-up">
 					<ul class="graph-legend">
-						<li><div class="on-homepage"></div><span>On Homepage</span></li>
+						<li><div class="on-categories"></div><span>On categories list</span></li>
 						<li><div class="reading-posts"></div><span>Reading posts</span></li>
 						<li><div class="browsing-topics"></div><span>Browsing topics</span></li>
-						<li><div class="idle"></div><span>Idle</span></li>
+						<li><div class="recent"></div><span>Recent / Unread</span></li>
 					</ul>
 					<canvas id="analytics-presence"></canvas>
 				</div>

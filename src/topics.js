@@ -61,6 +61,7 @@ var async = require('async'),
 		}
 		topic.title = validator.escape(topic.title);
 		topic.relativeTime = utils.toISOString(topic.timestamp);
+		topic.lastposttimeISO = utils.toISOString(topic.lastposttime);
 		callback(null, topic);
 	}
 
@@ -112,16 +113,16 @@ var async = require('async'),
 		});
 	};
 
-	Topics.getTopicsFromSet = function(set, uid, start, end, callback) {
+	Topics.getTopicsFromSet = function(set, uid, start, stop, callback) {
 		async.waterfall([
 			function(next) {
-				db.getSortedSetRevRange(set, start, end, next);
+				db.getSortedSetRevRange(set, start, stop, next);
 			},
 			function(tids, next) {
 				Topics.getTopics(tids, uid, next);
 			},
 			function(topics, next) {
-				next(null, {topics: topics, nextStart: end + 1});
+				next(null, {topics: topics, nextStart: stop + 1});
 			}
 		], callback);
 	};
@@ -129,7 +130,7 @@ var async = require('async'),
 	Topics.getTopics = function(tids, uid, callback) {
 		async.waterfall([
 			function(next) {
-				privileges.topics.filter('read', tids, uid, next);
+				privileges.topics.filterTids('read', tids, uid, next);
 			},
 			function(tids, next) {
 				Topics.getTopicsByTids(tids, uid, next);
@@ -209,19 +210,14 @@ var async = require('async'),
 		});
 	};
 
-	Topics.getTopicWithPosts = function(tid, set, uid, start, end, reverse, callback) {
+	Topics.getTopicWithPosts = function(tid, set, uid, start, stop, reverse, callback) {
 		Topics.getTopicData(tid, function(err, topicData) {
 			if (err || !topicData) {
 				return callback(err || new Error('[[error:no-topic]]'));
 			}
 
 			async.parallel({
-				mainPost: function(next) {
-					getMainPosts([topicData.mainPid], uid, next);
-				},
-				posts: function(next) {
-					Topics.getTopicPosts(tid, set, start, end, uid, reverse, next);
-				},
+				posts: async.apply(getMainPostAndReplies, topicData, set, uid, start, stop, reverse),
 				category: async.apply(Topics.getCategoryData, tid),
 				threadTools: async.apply(plugins.fireHook, 'filter:topic.thread_tools', {topic: topicData, uid: uid, tools: []}),
 				tags: async.apply(Topics.getTopicTagsObjects, tid),
@@ -231,7 +227,7 @@ var async = require('async'),
 					return callback(err);
 				}
 
-				topicData.posts = Array.isArray(results.mainPost) && results.mainPost.length ? [results.mainPost[0]].concat(results.posts) : results.posts;
+				topicData.posts = results.posts;
 				topicData.category = results.category;
 				topicData.thread_tools = results.threadTools.tools;
 				topicData.tags = results.tags;
@@ -249,22 +245,70 @@ var async = require('async'),
 		});
 	};
 
+	function getMainPostAndReplies(topic, set, uid, start, stop, reverse, callback) {
+		async.waterfall([
+			function(next) {
+				posts.getPidsFromSet(set, start, stop, reverse, next);
+			},
+			function(pids, next) {
+				if ((!Array.isArray(pids) || !pids.length) && !topic.mainPid) {
+					return callback(null, []);
+				}
+
+				if (topic.mainPid) {
+					pids.unshift(topic.mainPid);
+				}
+				posts.getPostsByPids(pids, uid, next);
+			},
+			function(posts, next) {
+				if (!posts.length) {
+					return next(null, []);
+				}
+
+				if (topic.mainPid) {
+					posts[0].index = 0;
+				}
+
+				var indices = Topics.calculatePostIndices(start, stop, topic.postcount, reverse);
+				for (var i=1; i<posts.length; ++i) {
+					if (posts[i]) {
+						posts[i].index = indices[i - 1];
+					}
+				}
+
+				Topics.addPostData(posts, uid, callback);
+			}
+		]);
+	}
+
 	Topics.getMainPost = function(tid, uid, callback) {
 		Topics.getMainPosts([tid], uid, function(err, mainPosts) {
 			callback(err, Array.isArray(mainPosts) && mainPosts.length ? mainPosts[0] : null);
 		});
 	};
 
-	Topics.getMainPosts = function(tids, uid, callback) {
+	Topics.getMainPids = function(tids, callback) {
+		if (!Array.isArray(tids) || !tids.length) {
+			return callback(null, []);
+		}
+
 		Topics.getTopicsFields(tids, ['mainPid'], function(err, topicData) {
 			if (err) {
 				return callback(err);
 			}
 
 			var mainPids = topicData.map(function(topic) {
-				return topic ? topic.mainPid : null;
+				return topic && topic.mainPid;
 			});
+			callback(null, mainPids);
+		});
+	};
 
+	Topics.getMainPosts = function(tids, uid, callback) {
+		Topics.getMainPids(tids, function(err, mainPids) {
+			if (err) {
+				return callback(err);
+			}
 			getMainPosts(mainPids, uid, callback);
 		});
 	};

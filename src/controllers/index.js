@@ -24,9 +24,8 @@ var Controllers = {
 	users: require('./users'),
 	groups: require('./groups'),
 	accounts: require('./accounts'),
-	static: require('./static'),
 	api: require('./api'),
-	admin: require('./admin'),
+	admin: require('./admin')
 };
 
 
@@ -52,15 +51,21 @@ Controllers.home = function(req, res, next) {
 Controllers.reset = function(req, res, next) {
 	if (req.params.code) {
 		user.reset.validate(req.params.code, function(err, valid) {
+			if (err) {
+				return next(err);
+			}
 			res.render('reset_code', {
 				valid: valid,
-				reset_code: req.params.code ? req.params.code : null,
+				displayExpiryNotice: req.session.passwordExpired,
+				code: req.params.code ? req.params.code : null,
 				breadcrumbs: helpers.buildBreadcrumbs([{text: '[[reset_password:reset_password]]', url: '/reset'}, {text: '[[reset_password:update_password]]'}])
 			});
+
+			delete req.session.passwordExpired;
 		});
 	} else {
 		res.render('reset', {
-			reset_code: req.params.code ? req.params.code : null,
+			code: req.params.code ? req.params.code : null,
 			breadcrumbs: helpers.buildBreadcrumbs([{text: '[[reset_password:reset_password]]'}])
 		});
 	}
@@ -75,7 +80,7 @@ Controllers.login = function(req, res, next) {
 	data.alternate_logins = loginStrategies.length > 0;
 	data.authentication = loginStrategies;
 	data.showResetLink = emailersPresent;
-	data.allowLocalLogin = parseInt(meta.config.allowLocalLogin, 10) === 1;
+	data.allowLocalLogin = parseInt(meta.config.allowLocalLogin, 10) === 1 || parseInt(req.query.local, 10) === 1;
 	data.allowRegistration = parseInt(meta.config.allowRegistration, 10) === 1;
 	data.allowLoginWith = '[[login:' + (meta.config.allowLoginWith || 'username-email') + ']]';
 	data.breadcrumbs = helpers.buildBreadcrumbs([{text: '[[global:login]]'}]);
@@ -115,7 +120,7 @@ Controllers.register = function(req, res, next) {
 	data.error = req.flash('error')[0];
 
 	plugins.fireHook('filter:register.build', {req: req, res: res, templateData: data}, function(err, data) {
-		if (err && process.env === 'development') {
+		if (err && global.env === 'development') {
 			winston.warn(JSON.stringify(err));
 			return next(err);
 		}

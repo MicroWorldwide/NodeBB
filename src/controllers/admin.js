@@ -3,9 +3,11 @@
 var async = require('async'),
 	fs = require('fs'),
 	path = require('path'),
+	nconf = require('nconf'),
 
 	user = require('../user'),
 	categories = require('../categories'),
+	privileges = require('../privileges'),
 	posts = require('../posts'),
 	topics = require('../topics'),
 	meta = require('../meta'),
@@ -13,9 +15,7 @@ var async = require('async'),
 	events = require('../events'),
 	languages = require('../languages'),
 	plugins = require('../plugins'),
-	widgets = require('../widgets'),
 	groups = require('../groups'),
-	pkg = require('../../package.json'),
 	validator = require('validator');
 
 
@@ -32,6 +32,7 @@ var adminController = {
 	events: {},
 	logs: {},
 	database: {},
+	postCache: {},
 	plugins: {},
 	languages: {},
 	settings: {},
@@ -62,7 +63,7 @@ adminController.home = function(req, res, next) {
 			return next(err);
 		}
 		res.render('admin/general/dashboard', {
-			version: pkg.version,
+			version: nconf.get('version'),
 			notices: results.notices,
 			stats: results.stats
 		});
@@ -126,33 +127,56 @@ function getGlobalField(field, callback) {
 	});
 }
 
-adminController.categories.active = function(req, res, next) {
-	filterAndRenderCategories(req, res, next, true);
-};
-
-adminController.categories.disabled = function(req, res, next) {
-	filterAndRenderCategories(req, res, next, false);
-};
-
-function filterAndRenderCategories(req, res, next, active) {
-	var uid = req.user ? parseInt(req.user.uid, 10) : 0;
-	categories.getAllCategories(uid, function (err, categoryData) {
+adminController.categories.get = function(req, res, next) {
+	async.parallel({
+		category: async.apply(categories.getCategories, [req.params.category_id], req.user.uid),
+		privileges: async.apply(privileges.categories.list, req.params.category_id)
+	}, function(err, data) {
 		if (err) {
 			return next(err);
 		}
 
-		categoryData = categoryData.filter(function (category) {
-			if (!category) {
-				return false;
+		plugins.fireHook('filter:admin.category.get', {req: req, res: res, category: data.category[0], privileges: data.privileges}, function(err, data) {
+			if (err) {
+				return next(err);
 			}
-			return active ? !category.disabled : category.disabled;
+
+			res.render('admin/manage/category', {
+				category: data.category,
+				privileges: data.privileges
+			});
+		});
+	});
+};
+
+adminController.categories.getAll = function(req, res, next) {
+	var	active = [],
+		disabled = [];
+
+	async.waterfall([
+		function(next) {
+			db.getSortedSetRange('categories:cid', 0, -1, next);
+		},
+		function(cids, next) {
+			categories.getCategoriesData(cids, next);
+		},
+		function(categories, next) {
+			plugins.fireHook('filter:admin.categories.get', {req: req, res: res, categories: categories}, next);
+		}
+	], function(err, data) {
+		if (err) {
+			return next(err);
+		}
+		data.categories.filter(Boolean).forEach(function(category) {
+			(category.disabled ? disabled : active).push(category);
 		});
 
 		res.render('admin/manage/categories', {
-			categories: categoryData
+			active: active,
+			disabled: disabled
 		});
 	});
-}
+};
 
 adminController.tags.get = function(req, res, next) {
 	topics.getTags(0, 199, function(err, tags) {
@@ -169,25 +193,46 @@ adminController.flags.get = function(req, res, next) {
 		if (err) {
 			return next(err);
 		}
-		res.render('admin/manage/flags', {posts: posts, next: end + 1, byUsername: byUsername});
+		res.render('admin/manage/flags', {posts: posts, next: stop + 1, byUsername: byUsername});
 	}
-	var uid = req.user ? parseInt(req.user.uid, 10) : 0;
+
 	var sortBy = req.query.sortBy || 'count';
 	var byUsername = req.query.byUsername || '';
 	var start = 0;
-	var end = 19;
+	var stop = 19;
 
 	if (byUsername) {
-		posts.getUserFlags(byUsername, sortBy, uid, start, end, done);
+		posts.getUserFlags(byUsername, sortBy, req.uid, start, stop, done);
 	} else {
 		var set = sortBy === 'count' ? 'posts:flags:count' : 'posts:flagged';
-		posts.getFlags(set, uid, start, end, done);	
-	}	
+		posts.getFlags(set, req.uid, start, stop, done);
+	}
 };
 
 adminController.database.get = function(req, res, next) {
-	db.info(function (err, data) {
-		res.render('admin/advanced/database', data);
+	async.parallel({
+		redis: function(next) {
+			if (nconf.get('redis')) {
+				var rdb = require('../database/redis');
+				var cxn = rdb.connect();
+				rdb.info(cxn, next);
+			} else {
+				next();
+			}
+		},
+		mongo: function(next) {
+			if (nconf.get('mongo')) {
+				var mdb = require('../database/mongo');
+				mdb.info(mdb.client, next);
+			} else {
+				next();
+			}
+		}
+	}, function(err, results) {
+		if (err) {
+			return next(err);
+		}
+		res.render('admin/advanced/database', results);
 	});
 };
 
@@ -212,6 +257,26 @@ adminController.logs.get = function(req, res, next) {
 	});
 };
 
+adminController.postCache.get = function(req, res, next) {
+	var cache = require('../posts/cache');
+	var avgPostSize = 0;
+	var percentFull = 0;
+	if (cache.itemCount > 0) {
+		avgPostSize = parseInt((cache.length / cache.itemCount), 10);
+		percentFull = ((cache.length / cache.max) * 100).toFixed(2);
+	}
+
+	res.render('admin/advanced/post-cache', {
+		cache: {
+			length: cache.length,
+			max: cache.max,
+			itemCount: cache.itemCount,
+			percentFull: percentFull,
+			avgPostSize: avgPostSize
+		}
+	});
+};
+
 adminController.plugins.get = function(req, res, next) {
 	plugins.getAll(function(err, plugins) {
 		if (err || !Array.isArray(plugins)) {
@@ -226,6 +291,12 @@ adminController.plugins.get = function(req, res, next) {
 
 adminController.languages.get = function(req, res, next) {
 	languages.list(function(err, languages) {
+		if (err) {
+			return next(err);
+		}
+		languages.forEach(function(language) {
+			language.selected = language.code === meta.config.defaultLang;
+		});
 		res.render('admin/general/languages', {
 			languages: languages
 		});
@@ -251,7 +322,7 @@ adminController.navigation.get = function(req, res, next) {
 		if (err) {
 			return next(err);
 		}
-		
+
 		res.render('admin/general/navigation', data);
 	});
 };
@@ -292,70 +363,12 @@ adminController.appearance.get = function(req, res, next) {
 };
 
 adminController.extend.widgets = function(req, res, next) {
-	async.parallel({
-		areas: function(next) {
-			var defaultAreas = [
-				{ name: 'Global Sidebar', template: 'global', location: 'sidebar' },
-				{ name: 'Global Header', template: 'global', location: 'header' },
-				{ name: 'Global Footer', template: 'global', location: 'footer' },
-
-				{ name: 'Group Page (Left)', template: 'groups/details.tpl', location: 'left'},
-				{ name: 'Group Page (Right)', template: 'groups/details.tpl', location: 'right'}
-			];
-
-			plugins.fireHook('filter:widgets.getAreas', defaultAreas, next);
-		},
-		widgets: function(next) {
-			plugins.fireHook('filter:widgets.getWidgets', [], next);
-		}
-	}, function(err, widgetData) {
+	require('../widgets/admin').get(function(err, data) {
 		if (err) {
 			return next(err);
 		}
-		widgetData.areas.push({ name: 'Draft Zone', template: 'global', location: 'drafts' });
 
-		async.each(widgetData.areas, function(area, next) {
-			widgets.getArea(area.template, area.location, function(err, areaData) {
-				area.data = areaData;
-				next(err);
-			});
-		}, function(err) {
-			if (err) {
-				return next(err);
-			}
-			for (var w in widgetData.widgets) {
-				if (widgetData.widgets.hasOwnProperty(w)) {
-					// if this gets anymore complicated, it needs to be a template
-					widgetData.widgets[w].content += "<br /><label>Title:</label><input type=\"text\" class=\"form-control\" name=\"title\" placeholder=\"Title (only shown on some containers)\" /><br /><label>Container:</label><textarea rows=\"4\" class=\"form-control container-html\" name=\"container\" placeholder=\"Drag and drop a container or enter HTML here.\"></textarea><div class=\"checkbox\"><label><input name=\"hide-guests\" type=\"checkbox\"> Hide from anonymous users?</label></div><div class=\"checkbox\"><label><input name=\"hide-registered\" type=\"checkbox\"> Hide from registered users?</input></label></div>";
-				}
-			}
-
-			var templates = [],
-				list = {}, index = 0;
-
-			widgetData.areas.forEach(function(area) {
-				if (typeof list[area.template] === 'undefined') {
-					list[area.template] = index;
-					templates.push({
-						template: area.template,
-						areas: []
-					});
-
-					index++;
-				}
-
-				templates[list[area.template]].areas.push({
-					name: area.name,
-					location: area.location
-				});
-			});
-
-			res.render('admin/extend/widgets', {
-				templates: templates,
-				areas: widgetData.areas,
-				widgets: widgetData.widgets
-			});
-		});
+		res.render('admin/extend/widgets', data);
 	});
 };
 
@@ -364,7 +377,7 @@ adminController.extend.rewards = function(req, res, next) {
 		if (err) {
 			return next(err);
 		}
-		
+
 		res.render('admin/extend/rewards', data);
 	});
 };
@@ -376,9 +389,10 @@ adminController.groups.get = function(req, res, next) {
 		isAdmin: true,
 		showSystemGroups: true
 	}, function(err, groups) {
-		groups = groups.filter(function(group) {
-			return group.name !== 'registered-users' && group.name !== 'guests' && group.name.indexOf(':privileges:') === -1;
-		});
+		if (err) {
+			return next(err);
+		}
+
 		res.render('admin/manage/groups', {
 			groups: groups,
 			yourid: req.user.uid

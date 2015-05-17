@@ -9,17 +9,17 @@ var async = require('async'),
 	user = require('../user'),
 	meta = require('../meta'),
 	posts = require('../posts'),
-	threadTools = require('../threadTools'),
-	postTools = require('../postTools'),
 	privileges = require('../privileges'),
 	categories = require('../categories');
 
 module.exports = function(Topics) {
 
 	Topics.create = function(data, callback) {
+		// This is an interal method, consider using Topics.post instead
 		var uid = data.uid,
 			title = data.title,
-			cid = data.cid;
+			cid = data.cid,
+			tags = data.tags;
 
 		db.incrObjectField('global', 'nextTid', function(err, tid) {
 			if (err) {
@@ -27,7 +27,7 @@ module.exports = function(Topics) {
 			}
 
 			var slug = utils.slugify(title),
-				timestamp = Date.now();
+				timestamp = data.timestamp || Date.now();
 
 			if (!slug.length) {
 				return callback(new Error('[[error:invalid-title]]'));
@@ -78,7 +78,7 @@ module.exports = function(Topics) {
 						db.incrObjectField('global', 'topicCount', next);
 					},
 					function(next) {
-						Topics.createTags(data.tags, tid, timestamp, next);
+						Topics.createTags(tags, tid, timestamp, next);
 					}
 				], function(err) {
 					if (err) {
@@ -93,10 +93,10 @@ module.exports = function(Topics) {
 
 	Topics.post = function(data, callback) {
 		var uid = data.uid,
-			handle = data.handle,
 			title = data.title,
 			content = data.content,
-			cid = data.cid;
+			cid = data.cid,
+			tags = data.tags;
 
 		if (title) {
 			title = title.trim();
@@ -125,6 +125,11 @@ module.exports = function(Topics) {
 				if(!canCreate) {
 					return next(new Error('[[error:no-privileges]]'));
 				}
+
+				if (!guestHandleValid(data)) {
+					return next(new Error('[[error:guest-handle-invalid]]'));
+				}
+
 				user.isReadyToPost(uid, next);
 			},
 			function(next) {
@@ -132,10 +137,10 @@ module.exports = function(Topics) {
 			},
 			function(filteredData, next) {
 				content = filteredData.content || data.content;
-				Topics.create({uid: uid, title: title, cid: cid, thumb: data.thumb, tags: data.tags}, next);
+				Topics.create({ uid: uid, title: title, cid: cid, thumb: data.thumb, tags: tags, timestamp: data.timestamp }, next);
 			},
 			function(tid, next) {
-				Topics.reply({uid:uid, tid:tid, handle: handle, content:content, req: data.req}, next);
+				Topics.reply({ uid:uid, tid:tid, handle: data.handle, content:content, timestamp: data.timestamp, req: data.req }, next);
 			},
 			function(postData, next) {
 				async.parallel({
@@ -166,6 +171,7 @@ module.exports = function(Topics) {
 
 				data.topicData = data.topicData[0];
 				data.topicData.unreplied = 1;
+				data.topicData.mainPost = data.postData;
 
 				plugins.fireHook('action:topic.post', data.topicData);
 
@@ -184,34 +190,31 @@ module.exports = function(Topics) {
 	Topics.reply = function(data, callback) {
 		var tid = data.tid,
 			uid = data.uid,
-			toPid = data.toPid,
-			handle = data.handle,
 			content = data.content,
 			postData;
 
 		async.waterfall([
 			function(next) {
 				async.parallel({
-					exists: function(next) {
-						Topics.exists(tid, next);
-					},
-					locked: function(next) {
-						Topics.isLocked(tid, next);
-					},
-					canReply: function(next) {
-						privileges.topics.can('topics:reply', tid, uid, next);
-					}
+					exists: async.apply(Topics.exists, tid),
+					locked: async.apply(Topics.isLocked, tid),
+					canReply: async.apply(privileges.topics.can, 'topics:reply', tid, uid),
+					isAdmin: async.apply(user.isAdministrator, uid)
 				}, next);
 			},
 			function(results, next) {
 				if (!results.exists) {
 					return next(new Error('[[error:no-topic]]'));
 				}
-				if (results.locked) {
+				if (results.locked && !results.isAdmin) {
 					return next(new Error('[[error:topic-locked]]'));
 				}
 				if (!results.canReply) {
 					return next(new Error('[[error:no-privileges]]'));
+				}
+
+				if (!guestHandleValid(data)) {
+					return next(new Error('[[error:guest-handle-invalid]]'));
 				}
 
 				user.isReadyToPost(uid, next);
@@ -228,7 +231,7 @@ module.exports = function(Topics) {
 				checkContentLength(content, next);
 			},
 			function(next) {
-				posts.create({uid: uid, tid: tid, handle: handle, content: content, toPid: toPid, ip: data.req ? data.req.ip : null}, next);
+				posts.create({uid: uid, tid: tid, handle: data.handle, content: content, toPid: data.toPid, timestamp: data.timestamp, ip: data.req ? data.req.ip : null}, next);
 			},
 			function(data, next) {
 				postData = data;
@@ -252,7 +255,7 @@ module.exports = function(Topics) {
 						posts.getPidIndex(postData.pid, uid, next);
 					},
 					content: function(next) {
-						postTools.parsePost(postData, uid, next);
+						posts.parsePost(postData, next);
 					}
 				}, next);
 			},
@@ -262,7 +265,7 @@ module.exports = function(Topics) {
 
 				// Username override for guests, if enabled
 				if (parseInt(meta.config.allowGuestHandles, 10) === 1 && parseInt(postData.uid, 10) === 0 && data.handle) {
-					postData.user.username = data.handle;
+					postData.user.username = validator.escape(data.handle);
 				}
 
 				if (results.settings.followTopicsOnReply) {
@@ -276,8 +279,12 @@ module.exports = function(Topics) {
 				postData.selfPost = false;
 				postData.relativeTime = utils.toISOString(postData.timestamp);
 
-				if (parseInt(uid, 10)) {
+				if (parseInt(uid, 10) && data.req) {
 					Topics.notifyFollowers(postData, uid);
+				}
+
+				if (postData.index > 0) {
+					plugins.fireHook('action:topic.reply', postData);
 				}
 
 				postData.topic.title = validator.escape(postData.topic.title);
@@ -293,6 +300,14 @@ module.exports = function(Topics) {
 			return callback(new Error('[[error:content-too-long, '  + meta.config.maximumPostLength + ']]'));
 		}
 		callback();
+	}
+
+	function guestHandleValid(data) {
+		if (parseInt(meta.config.allowGuestHandles, 10) === 1 && parseInt(data.uid, 10) === 0 &&
+			data.handle && data.handle.length > meta.config.maximumUsernameLength) {
+			return false;
+		}
+		return true;
 	}
 
 };

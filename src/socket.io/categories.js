@@ -58,7 +58,7 @@ SocketCategories.loadMore = function(socket, data, callback) {
 		}
 
 		var start = parseInt(data.after, 10),
-			end = start + results.settings.topicsPerPage - 1;
+			stop = start + results.settings.topicsPerPage - 1;
 
 		if (results.targetUid) {
 			set = 'cid:' + data.cid + ':uid:' + results.targetUid + ':tids';
@@ -69,7 +69,7 @@ SocketCategories.loadMore = function(socket, data, callback) {
 			set: set,
 			reverse: reverse,
 			start: start,
-			stop: end,
+			stop: stop,
 			uid: socket.uid,
 			targetUid: results.targetUid
 		}, function(err, data) {
@@ -116,6 +116,10 @@ SocketCategories.ignore = function(socket, cid, callback) {
 		}
 		topics.pushUnreadCount(socket.uid, callback);
 	});
+};
+
+SocketCategories.isModerator = function(socket, cid, callback) {
+	user.isModerator(socket.uid, cid, callback);
 };
 
 module.exports = SocketCategories;

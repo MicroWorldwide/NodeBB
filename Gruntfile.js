@@ -57,10 +57,10 @@ module.exports = function(grunt) {
 				files: ['public/**/*.less', 'node_modules/nodebb-*/*.less', 'node_modules/nodebb-*/*/*.less', 'node_modules/nodebb-*/*/*/*.less', 'node_modules/nodebb-*/*/*/*/*.less']
 			},
 			clientUpdated: {
-				files: ['public/src/**/*.js', 'node_modules/nodebb-*/*.js', 'node_modules/nodebb-*/*/*.js', 'node_modules/nodebb-*/*/*/*.js', 'node_modules/nodebb-*/*/*/*/*.js']
+				files: ['public/src/**/*.js', 'node_modules/nodebb-*/*.js', 'node_modules/nodebb-*/*/*.js', 'node_modules/nodebb-*/*/*/*.js', 'node_modules/nodebb-*/*/*/*/*.js', 'node_modules/templates.js/lib/templates.js']
 			},
 			serverUpdated: {
-				files: ['*.js', 'src/**/*.js']
+				files: ['*.js', 'install/*.js', 'src/**/*.js']
 			},
 			templatesUpdated: {
 				files: ['src/views/**/*.tpl', 'node_modules/nodebb-*/*.tpl', 'node_modules/nodebb-*/*/*.tpl', 'node_modules/nodebb-*/*/*/*.tpl', 'node_modules/nodebb-*/*/*/*/*.tpl', 'node_modules/nodebb-*/*/*/*/*/*.tpl']

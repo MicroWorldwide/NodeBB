@@ -3,10 +3,12 @@
 'use strict';
 
 var async = require('async'),
+	S = require('string'),
 
 	db = require('../database'),
 	user = require('../user'),
 	posts = require('../posts'),
+	plugins = require('../plugins'),
 	utils = require('../../public/src/utils');
 
 
@@ -27,7 +29,7 @@ module.exports = function(Topics) {
 			}
 		});
 
-		posts.getPostsFields(teaserPids, ['pid', 'uid', 'timestamp', 'tid'], function(err, postData) {
+		posts.getPostsFields(teaserPids, ['pid', 'uid', 'timestamp', 'tid', 'content'], function(err, postData) {
 			if (err) {
 				return callback(err);
 			}
@@ -48,20 +50,31 @@ module.exports = function(Topics) {
 					users[user.uid] = user;
 				});
 				var tidToPost = {};
-				postData.forEach(function(post) {
+
+				async.each(postData, function(post, next) {
 					post.user = users[post.uid];
 					post.timestamp = utils.toISOString(post.timestamp);
 					tidToPost[post.tid] = post;
-				});
-
-				var teasers = topics.map(function(topic, index) {
-					if (tidToPost[topic.tid]) {
-						tidToPost[topic.tid].index = counts[index];
+					posts.parsePost(post, next);
+				}, function(err) {
+					if (err) {
+						return callback(err);
 					}
-					return tidToPost[topic.tid];
-				});
+					var teasers = topics.map(function(topic, index) {
+						if (tidToPost[topic.tid]) {
+							tidToPost[topic.tid].index = counts[index];
+							if (tidToPost[topic.tid].content) {
+								var s = S(tidToPost[topic.tid].content);
+								tidToPost[topic.tid].content = s.stripTags.apply(s, utils.stripTags).s;
+							}
+						}
+						return tidToPost[topic.tid];
+					});
 
-				callback(null, teasers);
+					plugins.fireHook('filter:teasers.get', {teasers: teasers}, function(err, data) {
+						callback(err, data ? data.teasers : null);
+					});
+				});
 			});
 		});
 	};
@@ -87,11 +100,12 @@ module.exports = function(Topics) {
 	};
 
 	Topics.updateTeaser = function(tid, callback) {
-		db.getSortedSetRevRange('tid:' + tid + ':posts', 0, 0, function(err, pids) {
+		Topics.getLatestUndeletedReply(tid, function(err, pid) {
 			if (err) {
 				return callback(err);
 			}
-			var pid = Array.isArray(pids) && pids.length ? pids[0] : null;
+
+			pid = pid || null;
 			Topics.setTopicField(tid, 'teaserPid', pid, callback);
 		});
 	};

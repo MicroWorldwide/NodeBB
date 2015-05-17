@@ -6,7 +6,6 @@ var async = require('async'),
 	user = require('../user'),
 	groups = require('../groups'),
 	meta = require('../meta'),
-	postTools = require('../postTools'),
 	plugins = require('../plugins');
 
 
@@ -33,12 +32,18 @@ module.exports = function(Posts) {
 
 			var userData = results.userData;
 			userData.forEach(function(userData, i) {
-				userData.groups = results.groups[i];
-				if (!results.userSettings[i].groupTitle) {
-					results.userSettings[i].groupTitle = results.groups[i][0] ? results.groups[i][0].name : '';
-				}
+				userData.groups = [];
+
 				results.groups[i].forEach(function(group, index) {
-					group.selected = group.name === results.userSettings[i].groupTitle;
+					userData.groups[index] = {
+						name: group.name,
+						slug: group.slug,
+						labelColor: group.labelColor,
+						icon: group.icon,
+						userTitle: group.userTitle,
+						userTitleEnabled: group.userTitleEnabled,
+						selected: group.name === results.userSettings[i].groupTitle
+					};
 				});
 				userData.status = user.getStatus(userData.status, results.online[i]);
 			});
@@ -58,7 +63,7 @@ module.exports = function(Posts) {
 							userData.signature = '';
 							return next();
 						}
-						postTools.parseSignature(userData, uid, next);
+						Posts.parseSignature(userData, uid, next);
 					},
 					customProfileInfo: function(next) {
 						plugins.fireHook('filter:posts.custom_profile_info', {profile: [], uid: userData.uid}, next);

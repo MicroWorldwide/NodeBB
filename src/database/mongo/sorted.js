@@ -204,14 +204,17 @@ module.exports = function(db, module) {
 		if (!key) {
 			return callback();
 		}
-		var scoreQuery = {};
+
+		var query = {_key: key};
 		if (min !== '-inf') {
-			scoreQuery.$gte = min;
+			query.score = {$gte: min};
 		}
 		if (max !== '+inf') {
-			scoreQuery.$lte = max;
+			query.score = query.score || {};
+			query.score.$lte = max;
 		}
-		db.collection('objects').count({_key: key, score: scoreQuery}, function(err, count) {
+
+		db.collection('objects').count(query, function(err, count) {
 			callback(err, count ? count : 0);
 		});
 	};
@@ -374,8 +377,12 @@ module.exports = function(db, module) {
 	};
 
 	module.isSortedSetMember = function(key, value, callback) {
-		module.sortedSetScore(key, value, function(err, score) {
-			callback(err, !!score);
+		if (!key) {
+			return callback();
+		}
+		value = helpers.valueToString(value);
+		db.collection('objects').findOne({_key: key, value: value}, {_id: 0, value: 1}, function(err, result) {
+			callback(err, !!result);
 		});
 	};
 
@@ -499,7 +506,7 @@ module.exports = function(db, module) {
 		data.score = parseInt(increment, 10);
 
 		db.collection('objects').findAndModify({_key: key, value: value}, {}, {$inc: data}, {new: true, upsert: true}, function(err, result) {
-			callback(err, result ? result.score : null);
+			callback(err, result && result.value ? result.value.score : null);
 		});
 	};
 };

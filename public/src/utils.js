@@ -70,19 +70,21 @@
 		collapseDash: /-+/g,
 		trimTrailingDash: /-$/g,
 		trimLeadingDash: /^-/g,
-		isLatin: /^[\w]+$/,
+		isLatin: /^[\w\d\s.,\-@]+$/,
 		languageKeyRegex: /\[\[[\w]+:.+\]\]/,
 
 		//http://dense13.com/blog/2009/05/03/converting-string-to-slug-javascript/
-		slugify: function(str) {
-			if (!str) { str = ''; }
+		slugify: function(str, preserveCase) {
+			if (!str) {
+				return '';
+			}
 			str = str.replace(utils.trimRegex, '');
 			if(utils.isLatin.test(str)) {
 				str = str.replace(utils.invalidLatinChars, '-');
 			} else {
 				str = XRegExp.replace(str, utils.invalidUnicodeChars, '-');
 			}
-			str = str.toLocaleLowerCase();
+			str = !preserveCase ? str.toLocaleLowerCase() : str;
 			str = str.replace(utils.collapseWhitespace, '-');
 			str = str.replace(utils.collapseDash, '-');
 			str = str.replace(utils.trimTrailingDash, '');
@@ -276,7 +278,7 @@
 					}
 					if (!hash[key]) {
 						hash[key] = value;
-					} else {						
+					} else {
 						if (!$.isArray(hash[key])) {
 							hash[key] = [hash[key]];
 						}
@@ -362,6 +364,20 @@
 				continue;
 			}
 			return i < 0;
+		};
+	}
+
+	if (typeof String.prototype.endsWith != 'function') {
+		String.prototype.endsWith = function(suffix) {
+			if (this.length < suffix.length) {
+				return false;
+			}
+			var len = this.length;
+			var suffixLen = suffix.length;
+			for (var i=1; (i <= suffixLen && this[len - i] === suffix[suffixLen - i]); ++i) {
+				continue;
+			}
+			return i > suffixLen;
 		};
 	}
 

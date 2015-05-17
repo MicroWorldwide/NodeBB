@@ -1,16 +1,16 @@
 'use strict';
 
-/* globals define, app, utils, templates, translator, ajaxify, socket, bootbox */
+/* globals define, app, ajaxify, bootbox, socket, templates, utils */
 
-define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(composer, share, navigator) {
+define('forum/topic/postTools', ['share', 'navigator', 'components', 'translator'], function(share, navigator, components, translator) {
 
 	var PostTools = {},
 		topicName;
 
-	PostTools.init = function(tid, threadState) {
+	PostTools.init = function(tid) {
 		topicName = ajaxify.variables.get('topic_name');
 
-		addPostHandlers(tid, threadState);
+		addPostHandlers(tid);
 
 		share.addShareHandlers(topicName);
 
@@ -18,18 +18,20 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 	};
 
 	PostTools.toggle = function(pid, isDeleted) {
-		var postEl = $('#post-container li[data-pid="' + pid + '"]');
+		var postEl = components.get('post', 'pid', pid);
 
-		postEl.find('.quote, .favourite, .post_reply, .chat, .flag').toggleClass('hidden', isDeleted);
-		postEl.find('.purge').toggleClass('hidden', !isDeleted);
-		postEl.find('.delete .i').toggleClass('fa-trash-o', !isDeleted).toggleClass('fa-history', isDeleted);
-		postEl.find('.delete span').translateHtml(isDeleted ? ' [[topic:restore]]' : ' [[topic:delete]]');
+		postEl.find('[component="post/quote"], [component="post/favourite"], [component="post/reply"], [component="post/flag"], [component="user/chat"]')
+			.toggleClass('hidden', isDeleted);
+
+		postEl.find('[component="post/delete"]').toggleClass('hidden', isDeleted);
+		postEl.find('[component="post/restore"]').toggleClass('hidden', !isDeleted);
+		postEl.find('[component="post/purge"]').toggleClass('hidden', !isDeleted);
 	};
 
 	PostTools.updatePostCount = function() {
 		socket.emit('topics.postcount', ajaxify.variables.get('topic_id'), function(err, postCount) {
 			if (!err) {
-				var postCountEl = $('.topic-post-count');
+				var postCountEl = components.get('topic/post-count');
 				postCountEl.html(postCount).attr('title', postCount);
 				utils.makeNumbersHumanReadable(postCountEl);
 				navigator.setCount(postCount);
@@ -38,13 +40,13 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 	};
 
 	function addVoteHandler() {
-		$('#post-container').on('mouseenter', '.post-row .votes', function() {
+		components.get('topic').on('mouseenter', '[data-pid] .votes', function() {
 			loadDataAndCreateTooltip($(this));
 		});
 	}
 
 	function loadDataAndCreateTooltip(el) {
-		var pid = el.parents('.post-row').attr('data-pid');
+		var pid = el.parents('[data-pid]').attr('data-pid');
 		socket.emit('posts.getUpvoters', [pid], function(err, data) {
 			if (!err && data.length) {
 				createTooltip(el, data[0]);
@@ -69,103 +71,116 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 		}
 	}
 
-	function addPostHandlers(tid, threadState) {
-		$('.topic').on('click', '.post_reply', function() {
-			if (!threadState.locked) {
-				onReplyClicked($(this), tid, topicName);
-			}
+	function addPostHandlers(tid) {
+		var postContainer = components.get('topic');
+
+		postContainer.on('click', '[component="post/quote"]', function() {
+			onQuoteClicked($(this), tid, topicName);
 		});
 
-		var postContainer = $('#post-container');
-
-		postContainer.on('click', '.quote', function() {
-			if (!threadState.locked) {
-				onQuoteClicked($(this), tid, topicName);
-			}
+		postContainer.on('click', '[component="post/reply"]', function() {
+			onReplyClicked($(this), tid, topicName);
 		});
 
-		postContainer.on('click', '.favourite', function() {
+		components.get('topic/reply').on('click', function() {
+			onReplyClicked($(this), tid, topicName);
+		});
+
+		postContainer.on('click', '[component="post/favourite"]', function() {
 			favouritePost($(this), getData($(this), 'data-pid'));
 		});
 
-		postContainer.on('click', '.upvote', function() {
+		postContainer.on('click', '[component="post/upvote"]', function() {
 			return toggleVote($(this), '.upvoted', 'posts.upvote');
 		});
 
-		postContainer.on('click', '.downvote', function() {
+		postContainer.on('click', '[component="post/downvote"]', function() {
 			return toggleVote($(this), '.downvoted', 'posts.downvote');
 		});
 
-		postContainer.on('click', '.votes', function() {
+		postContainer.on('click', '[component="post/vote-count"]', function() {
 			showVotes(getData($(this), 'data-pid'));
 		});
 
-		postContainer.on('click', '.flag', function() {
+		postContainer.on('click', '[component="post/flag"]', function() {
 			flagPost(getData($(this), 'data-pid'));
 		});
 
-		postContainer.on('click', '.edit', function(e) {
-			composer.editPost(getData($(this), 'data-pid'));
+		postContainer.on('click', '[component="post/edit"]', function(e) {
+			var btn = $(this);
+			require(['composer'], function(composer) {
+				composer.editPost(getData(btn, 'data-pid'));
+			});
 		});
 
-		postContainer.on('click', '.delete', function(e) {
-			deletePost($(this), tid);
+		postContainer.on('click', '[component="post/delete"]', function(e) {
+			togglePostDelete($(this), tid);
 		});
 
-		postContainer.on('click', '.purge', function(e) {
+		postContainer.on('click', '[component="post/restore"]', function(e) {
+			togglePostDelete($(this), tid);
+		});
+
+		postContainer.on('click', '[component="post/purge"]', function(e) {
 			purgePost($(this), tid);
 		});
 
-		postContainer.on('click', '.move', function(e) {
+		postContainer.on('click', '[component="post/move"]', function(e) {
 			openMovePostModal($(this));
 		});
 
-		postContainer.on('click', '.chat', function(e) {
+		postContainer.on('click', '[component="post/chat"]', function(e) {
 			openChat($(this));
 		});
 	}
 
 	function onReplyClicked(button, tid, topicName) {
-		var selectionText = '',
-			selection = window.getSelection ? window.getSelection() : document.selection.createRange();
+		require(['composer'], function(composer) {
+			var selectionText = '',
+				selection = window.getSelection ? window.getSelection() : document.selection.createRange(),
+				topicUUID = composer.findByTid(tid);
 
-		if ($(selection.baseNode).parents('.post-content').length > 0) {
-			var snippet = selection.toString();
-			if (snippet.length) {
-				selectionText = '> ' + snippet.replace(/\n/g, '\n> ') + '\n\n';
+			if ($(selection.baseNode).parents('[component="post/content"]').length > 0) {
+				var snippet = selection.toString();
+				if (snippet.length) {
+					selectionText = '> ' + snippet.replace(/\n/g, '\n> ') + '\n\n';
+				}
 			}
-		}
 
-		var username = getUserName(selectionText ? $(selection.baseNode) : button);
-		if (getData(button, 'data-uid') === '0') {
-			username = '';
-		}
-		if (selectionText.length) {
-			composer.addQuote(tid, ajaxify.variables.get('topic_slug'), getData(button, 'data-index'), getData(button, 'data-pid'), topicName, username, selectionText);
-		} else {
-			composer.newReply(tid, getData(button, 'data-pid'), topicName, username ? username + ' ' : '');
-		}
+			var username = getUserName(selectionText ? $(selection.baseNode) : button);
+			if (getData(button, 'data-uid') === '0') {
+				username = '';
+			}
+			if (selectionText.length) {
+				composer.addQuote(tid, ajaxify.variables.get('topic_slug'), getData(button, 'data-index'), getData(button, 'data-pid'), topicName, username, selectionText, topicUUID);
+			} else {
+				composer.newReply(tid, getData(button, 'data-pid'), topicName, username ? username + ' ' : '');
+			}
+		});
 
 	}
 
 	function onQuoteClicked(button, tid, topicName) {
-		var username = getUserName(button),
-			pid = getData(button, 'data-pid');
+		require(['composer'], function(composer) {
+			var username = getUserName(button),
+				pid = getData(button, 'data-pid'),
+				topicUUID = composer.findByTid(tid);
 
-		socket.emit('posts.getRawPost', pid, function(err, post) {
-			if(err) {
-				return app.alertError(err.message);
-			}
-			var quoted = '';
-			if(post) {
-				quoted = '> ' + post.replace(/\n/g, '\n> ') + '\n\n';
-			}
+			socket.emit('posts.getRawPost', pid, function(err, post) {
+				if(err) {
+					return app.alertError(err.message);
+				}
+				var quoted = '';
+				if(post) {
+					quoted = '> ' + post.replace(/\n/g, '\n> ') + '\n\n';
+				}
 
-			if($('.composer').length) {
-				composer.addQuote(tid, ajaxify.variables.get('topic_slug'), getData(button, 'data-index'), pid, topicName, username, quoted);
-			} else {
-				composer.newReply(tid, pid, topicName, '[[modules:composer.user_said, ' + username + ']]\n' + quoted);
-			}
+				if(topicUUID) {
+					composer.addQuote(tid, ajaxify.variables.get('topic_slug'), getData(button, 'data-index'), pid, topicName, username, quoted, topicUUID);
+				} else {
+					composer.newReply(tid, pid, topicName, '[[modules:composer.user_said, ' + username + ']]\n' + quoted);
+				}
+			});
 		});
 	}
 
@@ -185,7 +200,7 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 	}
 
 	function toggleVote(button, className, method) {
-		var post = button.parents('.post-row'),
+		var post = button.parents('[data-pid]'),
 			currentState = post.find(className).length;
 
 		socket.emit(currentState ? 'posts.unvote' : method , {
@@ -222,12 +237,12 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 	}
 
 	function getData(button, data) {
-		return button.parents('.post-row').attr(data);
+		return button.parents('[data-pid]').attr(data);
 	}
 
 	function getUserName(button) {
 		var username = '',
-			post = button.parents('li[data-pid]');
+			post = button.parents('[data-pid]');
 
 		if (post.length) {
 			username = post.attr('data-username').replace(/\s/g, '-');
@@ -239,9 +254,9 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 		return username;
 	}
 
-	function deletePost(button, tid) {
+	function togglePostDelete(button, tid) {
 		var pid = getData(button, 'data-pid'),
-			postEl = $('#post-container li[data-pid="' + pid + '"]'),
+			postEl = components.get('post', 'pid', pid),
 			action = !postEl.hasClass('deleted') ? 'delete' : 'restore';
 
 		postAction(action, pid, tid);
@@ -262,7 +277,7 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 					pid: pid,
 					tid: tid
 				}, function(err) {
-					if(err) {
+					if (err) {
 						app.alertError(err.message);
 					}
 				});
@@ -290,7 +305,7 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 		});
 
 		moveBtn.on('click', function() {
-			movePost(button.parents('.post-row'), getData(button, 'data-pid'), topicId.val());
+			movePost(button.parents('[data-pid]'), getData(button, 'data-pid'), topicId.val());
 		});
 	}
 
@@ -306,7 +321,7 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 		socket.emit('topics.movePost', {pid: pid, tid: tid}, function(err) {
 			$('#move-post-modal').addClass('hide');
 
-			if(err) {
+			if (err) {
 				$('#topicId').val('');
 				return app.alertError(err.message);
 			}
@@ -324,21 +339,22 @@ define('forum/topic/postTools', ['composer', 'share', 'navigator'], function(com
 	function flagPost(pid) {
 		translator.translate('[[topic:flag_confirm]]', function(message) {
 			bootbox.confirm(message, function(confirm) {
-				if (confirm) {
-					socket.emit('posts.flag', pid, function(err) {
-						if(err) {
-							return app.alertError(err.message);
-						}
-
-						app.alertSuccess('[[topic:flag_success]]');
-					});
+				if (!confirm) {
+					return;
 				}
+				socket.emit('posts.flag', pid, function(err) {
+					if (err) {
+						return app.alertError(err.message);
+					}
+
+					app.alertSuccess('[[topic:flag_success]]');
+				});
 			});
 		});
 	}
 
 	function openChat(button) {
-		var post = button.parents('li.post-row');
+		var post = button.parents('[data-pid]');
 
 		app.openChat(post.attr('data-username'), post.attr('data-uid'));
 		button.parents('.btn-group').find('.dropdown-toggle').click();

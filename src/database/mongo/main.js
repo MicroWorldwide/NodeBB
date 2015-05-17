@@ -5,29 +5,58 @@ var winston = require('winston');
 module.exports = function(db, module) {
 	var helpers = module.helpers.mongo;
 
-	module.searchIndex = function(key, content, id, callback) {
+	module.searchIndex = function(key, data, id, callback) {
 		callback = callback || function() {};
-		var data = {
-			id: id,
-			key: key,
-			content: content
+		id = parseInt(id, 10);
+		if (!id) {
+			return callback();
+		}
+		var setData = {
+			id: id
 		};
+		for(var field in data) {
+			if (data.hasOwnProperty(field) && data[field]) {
+				setData[field] = data[field].toString();
+			}
+		}
 
-		db.collection('search').update({key:key, id:id}, {$set:data}, {upsert:true, w: 1}, function(err) {
-			if(err) {
+		db.collection('search' + key).update({id: id}, {$set: setData}, {upsert:true, w: 1}, function(err) {
+			if (err) {
 				winston.error('Error indexing ' + err.message);
 			}
 			callback(err);
 		});
 	};
 
-	module.search = function(key, term, limit, callback) {
-		db.collection('search').find({ $text: { $search: term }, key: key}, {limit: limit}).toArray(function(err, results) {
-			if(err) {
+	module.search = function(key, data, limit, callback) {
+		var searchQuery = {};
+
+		if (data.content) {
+			searchQuery.$text = {$search: data.content};
+		}
+
+		if (Array.isArray(data.cid) && data.cid.length) {
+		 	if (data.cid.length > 1) {
+				searchQuery.cid = {$in: data.cid.map(String)};
+			} else {
+				searchQuery.cid = data.cid[0].toString();
+			}
+		}
+
+		if (Array.isArray(data.uid) && data.uid.length) {
+			if (data.uid.length > 1) {
+				searchQuery.uid = {$in: data.uid.map(String)};
+			} else {
+				searchQuery.uid = data.uid[0].toString();
+			}
+		}
+
+		db.collection('search' + key).find(searchQuery, {limit: limit}).toArray(function(err, results) {
+			if (err) {
 				return callback(err);
 			}
 
-			if(!results || !results.length) {
+			if (!results || !results.length) {
 				return callback(null, []);
 			}
 
@@ -41,30 +70,19 @@ module.exports = function(db, module) {
 
 	module.searchRemove = function(key, id, callback) {
 		callback = callback || helpers.noop;
-		db.collection('search').remove({key:key, id:id}, callback);
+		id = parseInt(id, 10);
+		if (!id) {
+			return callback();
+		}
+
+		db.collection('search' + key).remove({id: id}, function(err, res) {
+			callback(err);
+		});
 	};
 
 	module.flushdb = function(callback) {
 		callback = callback || helpers.noop;
 		db.dropDatabase(callback);
-	};
-
-	module.info = function(callback) {
-		db.stats({scale:1024}, function(err, stats) {
-			if(err) {
-				return callback(err);
-			}
-
-			stats.avgObjSize = (stats.avgObjSize / 1024).toFixed(2);
-			stats.dataSize = (stats.dataSize / 1024).toFixed(2);
-			stats.storageSize = (stats.storageSize / 1024).toFixed(2);
-			stats.fileSize = (stats.fileSize / 1024).toFixed(2);
-			stats.indexSize = (stats.indexSize / 1024).toFixed(2);
-			stats.raw = JSON.stringify(stats, null, 4);
-			stats.mongo = true;
-
-			callback(null, stats);
-		});
 	};
 
 	module.exists = function(key, callback) {
@@ -118,7 +136,7 @@ module.exports = function(db, module) {
 			return callback();
 		}
 		db.collection('objects').findAndModify({_key: key}, {}, {$inc: {value: 1}}, {new: true, upsert: true}, function(err, result) {
-			callback(err, result ? result.value : null);
+			callback(err, result && result.value ? result.value.value : null);
 		});
 	};
 

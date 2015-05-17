@@ -5,23 +5,24 @@ var usersController = {};
 var async = require('async'),
 	user = require('../user'),
 	meta = require('../meta'),
+	pagination = require('../pagination'),
 	plugins = require('../plugins'),
-	db = require('../database');
+	db = require('../database'),
+	helpers = require('./helpers');
 
 usersController.getOnlineUsers = function(req, res, next) {
 	var	websockets = require('../socket.io');
-	var uid = req.user ? req.user.uid : 0;
 
 	async.parallel({
 		users: function(next) {
-			user.getUsersFromSet('users:online', uid, 0, 49, next);
+			user.getUsersFromSet('users:online', req.uid, 0, 49, next);
 		},
 		count: function(next) {
 			var now = Date.now();
 			db.sortedSetCount('users:online', now - 300000, now, next);
 		},
 		isAdministrator: function(next) {
-			user.isAdministrator(uid, next);
+			user.isAdministrator(req.uid, next);
 		}
 	}, function(err, results) {
 		if (err) {
@@ -34,17 +35,15 @@ usersController.getOnlineUsers = function(req, res, next) {
 			});
 		}
 
-		var anonymousUserCount = websockets.getOnlineAnonCount();
-
 		var userData = {
+			'route_users:online': true,
 			search_display: 'hidden',
 			loadmore_display: results.count > 50 ? 'block' : 'hide',
 			users: results.users,
-			anonymousUserCount: anonymousUserCount,
-			show_anon: anonymousUserCount ? '' : 'hide'
+			anonymousUserCount: websockets.getOnlineAnonCount()
 		};
 
-		res.render('users', userData);
+		render(req, res, userData, next);
 	});
 };
 
@@ -61,20 +60,19 @@ usersController.getUsersSortedByJoinDate = function(req, res, next) {
 };
 
 usersController.getUsers = function(set, count, req, res, next) {
-	var uid = req.user ? req.user.uid : 0;
-
-	getUsersAndCount(set, uid, count, function(err, data) {
+	getUsersAndCount(set, req.uid, count, function(err, data) {
 		if (err) {
 			return next(err);
 		}
+		var pageCount = Math.ceil(data.count / (parseInt(meta.config.userSearchResultsPerPage, 10) || 20));
 		var userData = {
 			search_display: 'hidden',
 			loadmore_display: data.count > count ? 'block' : 'hide',
 			users: data.users,
-			show_anon: 'hide'
+			pagination: pagination.create(1, pageCount)
 		};
-
-		res.render('users', userData);
+		userData['route_' + set] = true;
+		render(req, res, userData, next);
 	});
 };
 
@@ -94,15 +92,17 @@ function getUsersAndCount(set, uid, count, callback) {
 			return user && parseInt(user.uid, 10);
 		});
 
-		callback(null, {users: results.users, count: results.count});
+		callback(null, results);
 	});
 }
 
 usersController.getUsersForSearch = function(req, res, next) {
-	var resultsPerPage = parseInt(meta.config.userSearchResultsPerPage, 10) || 20,
-		uid = req.user ? req.user.uid : 0;
+	if (!req.uid) {
+		return helpers.notAllowed(req, res);
+	}
+	var resultsPerPage = parseInt(meta.config.userSearchResultsPerPage, 10) || 20;
 
-	getUsersAndCount('users:joindate', uid, resultsPerPage, function(err, data) {
+	getUsersAndCount('users:joindate', req.uid, resultsPerPage, function(err, data) {
 		if (err) {
 			return next(err);
 		}
@@ -110,13 +110,21 @@ usersController.getUsersForSearch = function(req, res, next) {
 		var userData = {
 			search_display: 'block',
 			loadmore_display: 'hidden',
-			users: data.users,
-			show_anon: 'hide'
+			users: data.users
 		};
 
-		res.render('users', userData);
+		render(req, res, userData, next);
 	});
 };
+
+function render(req, res, data, next) {
+	plugins.fireHook('filter:users.build', {req: req, res: res, templateData: data}, function(err, data) {
+		if (err) {
+			return next(err);
+		}
+		res.render('users', data.templateData);
+	});
+}
 
 
 

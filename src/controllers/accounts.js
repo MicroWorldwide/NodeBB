@@ -3,8 +3,6 @@
 var accountsController = {};
 
 var fs = require('fs'),
-	path = require('path'),
-	winston = require('winston'),
 	nconf = require('nconf'),
 	async = require('async'),
 	validator = require('validator'),
@@ -15,13 +13,11 @@ var fs = require('fs'),
 	topics = require('../topics'),
 	groups = require('../groups'),
 	messaging = require('../messaging'),
-	postTools = require('../postTools'),
 	utils = require('../../public/src/utils'),
 	meta = require('../meta'),
 	plugins = require('../plugins'),
 	languages = require('../languages'),
-	image = require('../image'),
-	file = require('../file'),
+
 	helpers = require('./helpers');
 
 function getUserDataByUserSlug(userslug, callerUID, callback) {
@@ -92,9 +88,16 @@ function getUserDataByUserSlug(userslug, callerUID, callback) {
 			userData.profile_links = results.profile_links;
 			userData.status = require('../socket.io').isUserOnline(userData.uid) ? (userData.status || 'online') : 'offline';
 			userData.banned = parseInt(userData.banned, 10) === 1;
-			userData.websiteName = userData.website.replace(validator.escape('http://'), '').replace(validator.escape('https://'), '');
+			userData.websiteName = userData.website.replace('http://', '').replace('https://', '');
 			userData.followingCount = parseInt(userData.followingCount, 10) || 0;
 			userData.followerCount = parseInt(userData.followerCount, 10) || 0;
+
+			userData.username = validator.escape(userData.username);
+			userData.email = validator.escape(userData.email);
+			userData.fullname = validator.escape(userData.fullname);
+			userData.location = validator.escape(userData.location);
+			userData.signature = validator.escape(userData.signature);
+			userData.aboutme = validator.escape(userData.aboutme || '');
 
 			callback(null, userData);
 		});
@@ -112,6 +115,10 @@ accountsController.getUserByUID = function(req, res, next) {
 			return next(err);
 		}
 
+		if (!results.userData) {
+			return helpers.notFound(req, res);
+		}
+
 		results.userData.email = results.settings.showemail ? results.userData.email : undefined;
 		results.userData.fullname = results.settings.showfullname ? results.userData.fullname : undefined;
 
@@ -120,8 +127,7 @@ accountsController.getUserByUID = function(req, res, next) {
 };
 
 accountsController.getAccount = function(req, res, next) {
-	var lowercaseSlug = req.params.userslug.toLowerCase(),
-		callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
+	var lowercaseSlug = req.params.userslug.toLowerCase();
 
 	if (req.params.userslug !== lowercaseSlug) {
 		if (res.locals.isAPI) {
@@ -131,7 +137,7 @@ accountsController.getAccount = function(req, res, next) {
 		}
 	}
 
-	getUserDataByUserSlug(req.params.userslug, callerUID, function (err, userData) {
+	getUserDataByUserSlug(req.params.userslug, req.uid, function (err, userData) {
 		if (err) {
 			return next(err);
 		}
@@ -140,19 +146,26 @@ accountsController.getAccount = function(req, res, next) {
 			return helpers.notFound(req, res);
 		}
 
-		if (callerUID !== parseInt(userData.uid, 10)) {
+		if (req.uid !== parseInt(userData.uid, 10)) {
 			user.incrementUserFieldBy(userData.uid, 'profileviews', 1);
 		}
 
 		async.parallel({
 			isFollowing: function(next) {
-				user.isFollowing(callerUID, userData.theirid, next);
+				user.isFollowing(req.uid, userData.theirid, next);
 			},
 			posts: function(next) {
-				posts.getPostsFromSet('uid:' + userData.theirid + ':posts', callerUID, 0, 9, next);
+				posts.getPostSummariesFromSet('uid:' + userData.theirid + ':posts', req.uid, 0, 9, next);
 			},
 			signature: function(next) {
-				postTools.parseSignature(userData, callerUID, next);
+				posts.parseSignature(userData, req.uid, next);
+			},
+			aboutme: function(next) {
+				if (userData.aboutme) {
+					plugins.fireHook('filter:parse.raw', userData.aboutme, next);
+				} else {
+					next();
+				}
 			}
 		}, function(err, results) {
 			if(err) {
@@ -162,7 +175,7 @@ accountsController.getAccount = function(req, res, next) {
 			userData.posts = results.posts.posts.filter(function (p) {
 				return p && parseInt(p.deleted, 10) !== 1;
 			});
-
+			userData.aboutme = results.aboutme;
 			userData.nextStart = results.posts.nextStart;
 			userData.isFollowing = results.isFollowing;
 
@@ -170,7 +183,7 @@ accountsController.getAccount = function(req, res, next) {
 				userData.profileviews = 1;
 			}
 
-			plugins.fireHook('filter:user.account', {userData: userData, uid: callerUID}, function(err, data) {
+			plugins.fireHook('filter:user.account', {userData: userData, uid: req.uid}, function(err, data) {
 				if (err) {
 					return next(err);
 				}
@@ -189,12 +202,11 @@ accountsController.getFollowers = function(req, res, next) {
 };
 
 function getFollow(tpl, name, req, res, next) {
-	var callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
 	var userData;
 
 	async.waterfall([
 		function(next) {
-			getUserDataByUserSlug(req.params.userslug, callerUID, next);
+			getUserDataByUserSlug(req.params.userslug, req.uid, next);
 		},
 		function(data, next) {
 			userData = data;
@@ -205,7 +217,7 @@ function getFollow(tpl, name, req, res, next) {
 			user[method](userData.uid, 0, 49, next);
 		}
 	], function(err, users) {
-		if(err) {
+		if (err) {
 			return next(err);
 		}
 
@@ -217,11 +229,11 @@ function getFollow(tpl, name, req, res, next) {
 }
 
 accountsController.getFavourites = function(req, res, next) {
-	getFromUserSet('account/favourites', 'favourites', posts.getPostsFromSet, 'posts', req, res, next);
+	getFromUserSet('account/favourites', 'favourites', posts.getPostSummariesFromSet, 'posts', req, res, next);
 };
 
 accountsController.getPosts = function(req, res, next) {
-	getFromUserSet('account/posts', 'posts', posts.getPostsFromSet, 'posts', req, res, next);
+	getFromUserSet('account/posts', 'posts', posts.getPostSummariesFromSet, 'posts', req, res, next);
 };
 
 accountsController.getWatchedTopics = function(req, res, next) {
@@ -233,9 +245,7 @@ accountsController.getTopics = function(req, res, next) {
 };
 
 accountsController.getGroups = function(req, res, next) {
-	var callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
-
-	accountsController.getBaseUser(req.params.userslug, callerUID, function(err, userData) {
+	accountsController.getBaseUser(req.params.userslug, req.uid, function(err, userData) {
 		if (err) {
 			return next(err);
 		}
@@ -257,24 +267,51 @@ accountsController.getGroups = function(req, res, next) {
 };
 
 function getFromUserSet(tpl, set, method, type, req, res, next) {
-	var callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
-
-	accountsController.getBaseUser(req.params.userslug, callerUID, function(err, userData) {
+	async.parallel({
+		settings: function(next) {
+			user.getSettings(req.uid, next);
+		},
+		userData: function(next) {
+			accountsController.getBaseUser(req.params.userslug, req.uid, next);
+		}
+	}, function(err, results) {
 		if (err) {
 			return next(err);
 		}
-
+		var userData = results.userData;
 		if (!userData) {
 			return helpers.notFound(req, res);
 		}
 
-		method('uid:' + userData.uid + ':' + set, callerUID, 0, 19, function(err, data) {
+		var setName = 'uid:' + userData.uid + ':' + set;
+
+		var page = Math.max(1, parseInt(req.query.page, 10) || 1);
+		var itemsPerPage = (tpl === 'account/topics' || tpl === 'account/watched') ? results.settings.topicsPerPage : results.settings.postsPerPage;
+
+		async.parallel({
+			itemCount: function(next) {
+				if (results.settings.usePagination) {
+					db.sortedSetCard(setName, next);
+				} else {
+					next(null, 0);
+				}
+			},
+			data: function(next) {
+				var start = (page - 1) * itemsPerPage;
+				var stop = start + itemsPerPage - 1;
+				method(setName, req.uid, start, stop, next);
+			}
+		}, function(err, results) {
 			if (err) {
 				return next(err);
 			}
 
-			userData[type] = data[type];
-			userData.nextStart = data.nextStart;
+			userData[type] = results.data[type];
+			userData.nextStart = results.data.nextStart;
+			var pageCount = Math.ceil(results.itemCount / itemsPerPage);
+
+			var pagination = require('../pagination');
+			userData.pagination = pagination.create(page, pageCount);
 
 			res.render(tpl, userData);
 		});
@@ -317,11 +354,10 @@ accountsController.getBaseUser = function(userslug, callerUID, callback) {
 };
 
 accountsController.accountEdit = function(req, res, next) {
-	var callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
 	var userData;
 	async.waterfall([
 		function(next) {
-			getUserDataByUserSlug(req.params.userslug, callerUID, next);
+			getUserDataByUserSlug(req.params.userslug, req.uid, next);
 		},
 		function(data, next) {
 			userData = data;
@@ -339,71 +375,69 @@ accountsController.accountEdit = function(req, res, next) {
 };
 
 accountsController.accountSettings = function(req, res, next) {
-	var callerUID = req.user ? parseInt(req.user.uid, 10) : 0;
-
-	accountsController.getBaseUser(req.params.userslug, callerUID, function(err, userData) {
+	var userData;
+	async.waterfall([
+		function(next) {
+			accountsController.getBaseUser(req.params.userslug, req.uid, next);
+		},
+		function(_userData, next) {
+			userData = _userData;
+			if (!userData) {
+				return helpers.notFound(req, res);
+			}
+			async.parallel({
+				settings: function(next) {
+					user.getSettings(userData.uid, next);
+				},
+				userGroups: function(next) {
+					groups.getUserGroups([userData.uid], next);
+				},
+				languages: function(next) {
+					languages.list(next);
+				}
+			}, next);
+		},
+		function(results, next) {
+			userData.settings = results.settings;
+			userData.languages = results.languages;
+			userData.userGroups = results.userGroups[0];
+			plugins.fireHook('filter:user.settings', {settings: results.settings, customSettings: [], uid: req.uid}, next);
+		},
+		function(data, next) {
+			userData.customSettings = data.customSettings;
+			userData.disableEmailSubscriptions = parseInt(meta.config.disableEmailSubscriptions, 10) === 1;
+			next();
+		}
+	], function(err) {
 		if (err) {
 			return next(err);
 		}
 
-		if (!userData) {
-			return helpers.notFound(req, res);
-		}
+		userData.dailyDigestFreqOptions = [
+			{value: 'off', name: '[[user:digest_off]]', selected: 'off' === userData.settings.dailyDigestFreq},
+			{value: 'day', name: '[[user:digest_daily]]', selected: 'day' === userData.settings.dailyDigestFreq},
+			{value: 'week', name: '[[user:digest_weekly]]', selected: 'week' === userData.settings.dailyDigestFreq},
+			{value: 'month', name: '[[user:digest_monthly]]', selected: 'month' === userData.settings.dailyDigestFreq}
+		];
 
-		async.parallel({
-			settings: function(next) {
-				plugins.fireHook('filter:user.settings', [], next);
-			},
-			userGroups: function(next) {
-				groups.getUserGroups([userData.uid], next);
-			},			
-			languages: function(next) {
-				languages.list(next);
-			}
-		}, function(err, results) {
-			if (err) {
-				return next(err);
-			}
-
-			userData.settings = results.settings;
-			userData.languages = results.languages;
-			userData.userGroups = results.userGroups[0];
-
-			userData.disableEmailSubscriptions = parseInt(meta.config.disableEmailSubscriptions, 10) === 1;
-
-			res.render('account/settings', userData);
+		userData.userGroups.forEach(function(group) {
+			group.selected = group.name === userData.settings.groupTitle;
 		});
+
+		userData.languages.forEach(function(language) {
+			language.selected = language.code === userData.settings.userLang;
+		});
+
+		res.render('account/settings', userData);
 	});
 };
 
 accountsController.uploadPicture = function (req, res, next) {
 	var userPhoto = req.files.files[0];
-	var uploadSize = parseInt(meta.config.maximumProfileImageSize, 10) || 256;
-	var extension = path.extname(userPhoto.name);
-	var updateUid = req.user ? req.user.uid : 0;
-	var imageDimension = parseInt(meta.config.profileImageDimension, 10) || 128;
-	var convertToPNG = parseInt(meta.config['profile:convertProfileImageToPNG'], 10) === 1;
+
+	var updateUid = req.uid;
 
 	async.waterfall([
-		function(next) {
-			next(userPhoto.size > uploadSize * 1024 ? new Error('[[error:file-too-big, ' + uploadSize + ']]') : null);
-		},
-		function(next) {
-			next(!extension ? new Error('[[error:invalid-image-extension]]') : null);
-		},
-		function(next) {
-			file.isFileTypeAllowed(userPhoto.path, ['png', 'jpeg', 'jpg', 'gif'], next);
-		},
-		function(next) {
-			image.resizeImage(userPhoto.path, extension, imageDimension, imageDimension, next);
-		},
-		function(next) {
-			if (convertToPNG) {
-				image.convertImageToPng(userPhoto.path, extension, next);
-			} else {
-				next();
-			}
-		},
 		function(next) {
 			user.getUidByUserslug(req.params.userslug, next);
 		},
@@ -412,7 +446,7 @@ accountsController.uploadPicture = function (req, res, next) {
 				return next();
 			}
 
-			user.isAdministrator(req.user.uid, function(err, isAdmin) {
+			user.isAdministrator(req.uid, function(err, isAdmin) {
 				if (err) {
 					return next(err);
 				}
@@ -423,55 +457,22 @@ accountsController.uploadPicture = function (req, res, next) {
 				updateUid = uid;
 				next();
 			});
+		},
+		function(next) {
+			user.uploadPicture(updateUid, userPhoto, next);
 		}
-	], function(err, result) {
-
-		function done(err, image) {
-			fs.unlink(userPhoto.path);
-			if (err) {
-				return res.json({error: err.message});
-			}
-
-			user.setUserFields(updateUid, {uploadedpicture: image.url, picture: image.url});
-
-			res.json([{name: userPhoto.name, url: nconf.get('relative_path') + image.url}]);
-		}
-
+	], function(err, image) {
+		fs.unlink(userPhoto.path);
 		if (err) {
-			fs.unlink(userPhoto.path);
 			return next(err);
 		}
 
-		if (plugins.hasListeners('filter:uploadImage')) {
-			return plugins.fireHook('filter:uploadImage', {image: userPhoto, uid: updateUid}, done);
-		}
-
-		var filename = updateUid + '-profileimg' + (convertToPNG ? '.png' : extension);
-
-		user.getUserField(updateUid, 'uploadedpicture', function (err, oldpicture) {
-			if (err) {
-				return next(err);
-			}
-			if (!oldpicture) {
-				file.saveFileToLocal(filename, 'profile', userPhoto.path, done);
-				return;
-			}
-
-			var absolutePath = path.join(nconf.get('base_dir'), nconf.get('upload_path'), 'profile', path.basename(oldpicture));
-
-			fs.unlink(absolutePath, function (err) {
-				if (err) {
-					winston.error(err);
-				}
-
-				file.saveFileToLocal(filename, 'profile', userPhoto.path, done);
-			});
-		});
+		res.json([{name: userPhoto.name, url: image.url.startsWith('http') ? image.url : nconf.get('relative_path') + image.url}]);
 	});
 };
 
 accountsController.getNotifications = function(req, res, next) {
-	user.notifications.getAll(req.user.uid, 40, function(err, notifications) {
+	user.notifications.getAll(req.uid, 40, function(err, notifications) {
 		if (err) {
 			return next(err);
 		}

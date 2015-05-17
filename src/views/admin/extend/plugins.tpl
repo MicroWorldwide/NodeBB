@@ -9,7 +9,11 @@
 					<!-- IF !plugins.error -->
 					<li data-plugin-id="{plugins.id}" data-version="{plugins.version}" class="clearfix">
 						<div class="pull-right">
+							<!-- IF plugins.isTheme -->
+							<a href="{config.relative_path}/admin/appearance/themes" class="btn btn-info">Themes</a>
+							<!-- ELSE -->
 							<button data-action="toggleActive" class="btn <!-- IF plugins.active --> btn-warning<!-- ELSE --> btn-success<!-- ENDIF plugins.active -->"><i class="fa fa-power-off"></i> <!-- IF plugins.active -->Deactivate<!-- ELSE -->Activate<!-- ENDIF plugins.active --></button>
+							<!-- ENDIF plugins.isTheme -->
 
 							<button data-action="toggleInstall" data-installed="1" class="btn btn-danger"><i class="fa fa-trash-o"></i> Uninstall</button>
 						</div>
@@ -24,7 +28,7 @@
 							<button data-action="upgrade" class="btn btn-success btn-xs"><i class="fa fa-download"></i> Upgrade</button>
 						<!-- ENDIF plugins.outdated -->
 						<!-- IF plugins.url -->
-						<p>For more information: <a href="{plugins.url}">{plugins.url}</a></p>
+						<p>For more information: <a target="_blank" href="{plugins.url}">{plugins.url}</a></p>
 						<!-- ENDIF plugins.url -->
 					</li>
 					<!-- ENDIF !plugins.error -->
@@ -69,7 +73,7 @@
 						<small>Latest <strong class="latestVersion">{plugins.latest}</strong></small>
 
 						<!-- IF plugins.url -->
-						<p>For more information: <a href="{plugins.url}">{plugins.url}</a></p>
+						<p>For more information: <a target="_blank" href="{plugins.url}">{plugins.url}</a></p>
 						<!-- ENDIF plugins.url -->
 					</li>
 					<!-- ENDIF !plugins.installed -->

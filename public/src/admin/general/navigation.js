@@ -1,7 +1,7 @@
 "use strict";
-/* global define, app, ajaxify, socket, templates, bootbox, translator */
+/* global define, app, ajaxify, socket, templates, bootbox */
 
-define('admin/general/navigation', function() {
+define('admin/general/navigation', ['translator'], function(translator) {
 	var navigation = {},
 		available;
 
@@ -18,7 +18,7 @@ define('admin/general/navigation', function() {
 					stop: drop
 				});
 		});
-		
+
 		$('#enabled')
 			.on('click', '.delete', remove)
 			.on('click', '.toggle', toggle)
@@ -75,6 +75,7 @@ define('admin/general/navigation', function() {
 
 	function remove() {
 		$(this).parents('li').remove();
+		return false;
 	}
 
 	function toggle() {
