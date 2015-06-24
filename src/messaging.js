@@ -142,6 +142,7 @@ var db = require('./database'),
 			async.waterfall([
 				async.apply(db.getObjects, keys),
 				function(messages, next) {
+					messages = messages.filter(Boolean);
 					async.map(messages, function(message, next) {
 						var self = parseInt(message.fromuid, 10) === parseInt(fromuid, 10);
 						message.fromUser = self ? userData[0] : userData[1];
@@ -401,6 +402,7 @@ var db = require('./database'),
 				emailer.send('notif_chat', touid, {
 					subject: '[[email:notif.chat.subject, ' + messageObj.fromUser.username + ']]',
 					username: messageObj.toUser.username,
+					userslug: utils.slugify(messageObj.toUser.username),
 					summary: '[[notifications:new_message_from, ' + messageObj.fromUser.username + ']]',
 					message: messageObj,
 					site_title: meta.config.title || 'NodeBB',
