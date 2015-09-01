@@ -35,18 +35,6 @@ emitter.on('nodebb:ready', function() {
 	});
 });
 
-SocketMeta.buildTitle = function(socket, text, callback) {
-	if (socket.uid) {
-		user.getSettings(socket.uid, function(err, settings) {
-			if (err) {
-				return callback(err);
-			}
-			meta.title.build(text, settings.userLang, callback);
-		});
-	} else {
-		meta.title.build(text, meta.config.defaultLang, callback);
-	}
-};
 
 /* Rooms */
 
@@ -57,6 +45,10 @@ SocketMeta.rooms.enter = function(socket, data, callback) {
 
 	if (!data) {
 		return callback(new Error('[[error:invalid-data]]'));
+	}
+
+	if (data.enter) {
+		data.enter = data.enter.toString();
 	}
 
 	if (data.enter && data.enter.startsWith('uid_') && data.enter !== 'uid_' + socket.uid) {
@@ -94,7 +86,9 @@ SocketMeta.rooms.getAll = function(socket, data, callback) {
 			socketCount: websockets.getSocketCount(),
 			users: {
 				categories: roomClients.categories ? roomClients.categories.length : 0,
-				recent: roomClients.recent_posts ? roomClients.recent_posts.length : 0,
+				recent: roomClients.recent_topics ? roomClients.recent_topics.length : 0,
+				unread: roomClients.unread_topics ? roomClients.unread_topics.length: 0,
+				popular: roomClients.popular_topics ? roomClients.popular_topics.length: 0,
 				topics: 0,
 				category: 0
 			},

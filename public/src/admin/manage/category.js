@@ -50,11 +50,11 @@ define('admin/manage/category', [
 
 		function enableColorPicker(idx, inputEl) {
 			var $inputEl = $(inputEl),
-				previewEl = $inputEl.parents('[data-cid]').find('.preview-box');
+				previewEl = $inputEl.parents('[data-cid]').find('.category-preview');
 
 			colorpicker.enable($inputEl, function(hsb, hex) {
 				if ($inputEl.attr('data-name') === 'bgColor') {
-					previewEl.css('background', '#' + hex);
+					previewEl.css('background-color', '#' + hex);
 				} else if ($inputEl.attr('data-name') === 'color') {
 					previewEl.css('color', '#' + hex);
 				}
@@ -63,39 +63,28 @@ define('admin/manage/category', [
 			});
 		}
 
-		function setupEditTargets() {
-			$('[data-edit-target]').on('click', function() {
-				var $this = $(this),
-					target = $($this.attr('data-edit-target'));
-
-				$this.addClass('hide');
-				target.removeClass('hide').on('blur', function() {
-					$this.removeClass('hide').children('span').html(this.value);
-					$(this).addClass('hide');
-				}).val($this.children('span').html());
-
-				target.focus();
-			});
-		}
-
 		// If any inputs have changed, prepare it for saving
 		$('form.category input, form.category select').on('change', function(ev) {
 			modified(ev.target);
 		});
 
+		// Update preview image size on change
+		$('[data-name="imageClass"]').on('change', function(ev) {
+			$('.category-preview').css('background-size', $(this).val());
+		});
+
 		// Colour Picker
 		$('[data-name="bgColor"], [data-name="color"]').each(enableColorPicker);
 
-		$('.save').on('click', save);
-		$('.revert').on('click', ajaxify.refresh);
+		$('#save').on('click', save);
 		$('.purge').on('click', function(e) {
 			e.preventDefault();
 
-			bootbox.confirm('<p class="lead">Do you really want to purge this category "' + $('form.category').find('input[data-name="name"]').val() + '"?</p><p><strong class="text-danger">Warning!</strong> All topics and posts in this category will be purged!</p>', function(confirm) {
+			bootbox.confirm('<p class="lead">Do you really want to purge this category "' + $('form.category').find('input[data-name="name"]').val() + '"?</p><h5><strong class="text-danger">Warning!</strong> All topics and posts in this category will be purged!</h5> <p class="help-block">Purging a category will remove all topics and posts, and delete the category from the database. If you want to remove a category <em>temporarily</em>, you\'ll want to "disable" the category instead.</p>', function(confirm) {
 				if (!confirm) {
 					return;
 				}
-				socket.emit('admin.categories.purge', ajaxify.variables.get('cid'), function(err) {
+				socket.emit('admin.categories.purge', ajaxify.data.category.cid, function(err) {
 					if (err) {
 						return app.alertError(err.message);
 					}
@@ -113,8 +102,7 @@ define('admin/manage/category', [
 			uploader.open(RELATIVE_PATH + '/api/admin/category/uploadpicture', { cid: cid }, 0, function(imageUrlOnServer) {
 				inputEl.val(imageUrlOnServer);
 				var previewBox = inputEl.parent().parent().siblings('.category-preview');
-				previewBox.css('background', 'url(' + imageUrlOnServer + '?' + new Date().getTime() + ')')
-					.css('background-size', 'cover');
+				previewBox.css('background', 'url(' + imageUrlOnServer + '?' + new Date().getTime() + ')');
 				modified(inputEl[0]);
 			});
 		});
@@ -138,10 +126,10 @@ define('admin/manage/category', [
 		});
 
 		// Parent Category Selector
-		$('button[data-action="setParent"]').on('click', Category.launchParentSelector);
+		$('button[data-action="setParent"], button[data-action="changeParent"]').on('click', Category.launchParentSelector);
 		$('button[data-action="removeParent"]').on('click', function() {
 			var payload= {};
-			payload[ajaxify.variables.get('cid')] = {
+			payload[ajaxify.data.category.cid] = {
 				parentCid: 0
 			};
 
@@ -149,11 +137,11 @@ define('admin/manage/category', [
 				if (err) {
 					return app.alertError(err.message);
 				}
-				ajaxify.refresh();
+				$('button[data-action="removeParent"]').parent().addClass('hide');
+				$('button[data-action="setParent"]').removeClass('hide');
 			});
 		});
 
-		setupEditTargets();
 		Category.setupPrivilegeTable();
 	};
 
@@ -192,7 +180,7 @@ define('admin/manage/category', [
 	};
 
 	Category.refreshPrivilegeTable = function() {
-		socket.emit('admin.categories.getPrivilegeSettings', ajaxify.variables.get('cid'), function(err, privileges) {
+		socket.emit('admin.categories.getPrivilegeSettings', ajaxify.data.category.cid, function(err, privileges) {
 			if (err) {
 				return app.alertError(err.message);
 			}
@@ -230,7 +218,7 @@ define('admin/manage/category', [
 
 	Category.setPrivilege = function(member, privilege, state, checkboxEl) {
 		socket.emit('admin.categories.setPrivilege', {
-			cid: ajaxify.variables.get('cid'),
+			cid: ajaxify.data.category.cid,
 			privilege: privilege,
 			set: state,
 			member: member
@@ -258,7 +246,7 @@ define('admin/manage/category', [
 					var parentCid = $(this).attr('data-cid'),
 						payload = {};
 
-					payload[ajaxify.variables.get('cid')] = {
+					payload[ajaxify.data.category.cid] = {
 						parentCid: parentCid
 					};
 
@@ -268,7 +256,8 @@ define('admin/manage/category', [
 						}
 
 						modal.modal('hide');
-						ajaxify.refresh();
+						$('button[data-action="removeParent"]').parent().removeClass('hide');
+						$('button[data-action="setParent"]').addClass('hide');
 					});
 				});
 			});
@@ -287,7 +276,7 @@ define('admin/manage/category', [
 
 			autocomplete.user(inputEl, function(ev, ui) {
 				socket.emit('admin.categories.setPrivilege', {
-					cid: ajaxify.variables.get('cid'),
+					cid: ajaxify.data.category.cid,
 					privilege: ['find', 'read'],
 					set: true,
 					member: ui.item.user.uid
@@ -315,7 +304,7 @@ define('admin/manage/category', [
 
 			autocomplete.group(inputEl, function(ev, ui) {
 				socket.emit('admin.categories.setPrivilege', {
-					cid: ajaxify.variables.get('cid'),
+					cid: ajaxify.data.category.cid,
 					privilege: ['groups:find', 'groups:read'],
 					set: true,
 					member: ui.item.group.name

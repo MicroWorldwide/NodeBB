@@ -31,6 +31,7 @@ var fs = require('fs'),
 	Plugins.clientScripts = [];
 	Plugins.customLanguages = [];
 	Plugins.libraryPaths = [];
+	Plugins.versionWarning = [];
 
 	Plugins.initialized = false;
 
@@ -74,6 +75,7 @@ var fs = require('fs'),
 		Plugins.libraries = {};
 		Plugins.loadedHooks = {};
 		Plugins.staticDirs = {};
+		Plugins.versionWarning = [];
 		Plugins.cssFiles.length = 0;
 		Plugins.lessFiles.length = 0;
 		Plugins.clientScripts.length = 0;
@@ -106,6 +108,16 @@ var fs = require('fs'),
 				});
 			},
 			function(next) {
+				// If some plugins are incompatible, throw the warning here
+				if (Plugins.versionWarning.length && nconf.get('isPrimary') === 'true') {
+					process.stdout.write('\n');
+					winston.warn('[plugins/load] The following plugins may not be compatible with your version of NodeBB. This may cause unintended behaviour or crashing. In the event of an unresponsive NodeBB caused by this plugin, run `./nodebb reset -p PLUGINNAME` to disable it.');
+					for(var x=0,numPlugins=Plugins.versionWarning.length;x<numPlugins;x++) {
+						process.stdout.write('  * '.yellow + Plugins.versionWarning[x].reset + '\n');
+					}
+					process.stdout.write('\n');
+				}
+
 				Object.keys(Plugins.loadedHooks).forEach(function(hook) {
 					var hooks = Plugins.loadedHooks[hook];
 					hooks = hooks.sort(function(a, b) {
@@ -164,81 +176,121 @@ var fs = require('fs'),
 		});
 	};
 
-	Plugins.getAll = function(callback) {
-		var url = (nconf.get('registry') || 'https://packages.nodebb.org') + '/api/v1/plugins?version=' + require('../package.json').version;
+	Plugins.get = function(id, callback) {
+		var url = (nconf.get('registry') || 'https://packages.nodebb.org') + '/api/v1/plugins/' + id;
 
-		require('request')(url, function(err, res, body) {
+		require('request')(url, {
+			json: true
+		}, function(err, res, body) {
+			if (res.statusCode === 404 || !body.payload) {
+				return callback(err, {});
+			}
+
+			Plugins.normalise([body.payload], function(err, normalised) {
+				normalised = normalised.filter(function(plugin) {
+					return plugin.id === id;
+				});
+				return callback(err, !err ? normalised[0] : undefined);
+			});
+		});
+	};
+
+	Plugins.list = function(matching, callback) {
+		if (arguments.length === 1 && typeof matching === 'function') {
+			callback = matching;
+			matching = true;
+		}
+
+		var url = (nconf.get('registry') || 'https://packages.nodebb.org') + '/api/v1/plugins' + (matching !== false ? '?version=' + require('../package.json').version : '');
+
+		require('request')(url, {
+			json: true
+		}, function(err, res, body) {
 			var plugins = [];
 
-			try {
-				plugins = JSON.parse(body);
-			} catch(err) {
+			if (err) {
 				winston.error('Error parsing plugins : ' + err.message);
 				plugins = [];
 			}
 
-			var pluginMap = {};
-			for(var i=0; i<plugins.length; ++i) {
-				plugins[i].id = plugins[i].name;
-				plugins[i].installed = false;
-				plugins[i].active = false;
-				plugins[i].url = plugins[i].url ? plugins[i].url : plugins[i].repository ? plugins[i].repository.url : '';
-				plugins[i].latest = plugins[i].latest;
-				pluginMap[plugins[i].name] = plugins[i];
+			Plugins.normalise(body, callback);
+		});
+	};
+
+	Plugins.normalise = function(apiReturn, callback) {
+		var pluginMap = {},
+			dependencies = require.main.require('./package.json').dependencies;
+
+		for(var i=0; i<apiReturn.length; ++i) {
+			apiReturn[i].id = apiReturn[i].name;
+			apiReturn[i].installed = false;
+			apiReturn[i].active = false;
+			apiReturn[i].url = apiReturn[i].url ? apiReturn[i].url : apiReturn[i].repository ? apiReturn[i].repository.url : '';
+			apiReturn[i].latest = apiReturn[i].latest;
+			pluginMap[apiReturn[i].name] = apiReturn[i];
+		}
+
+		Plugins.showInstalled(function(err, installedPlugins) {
+			if (err) {
+				return callback(err);
 			}
 
-			Plugins.showInstalled(function(err, installedPlugins) {
+			installedPlugins = installedPlugins.filter(function(plugin) {
+				return plugin && !plugin.system;
+			});
+
+			async.each(installedPlugins, function(plugin, next) {
+				// If it errored out because a package.json or plugin.json couldn't be read, no need to do this stuff
+				if (plugin.error) {
+					pluginMap[plugin.id] = pluginMap[plugin.id] || {};
+					pluginMap[plugin.id].installed = true;
+					pluginMap[plugin.id].error = true;
+					return next();
+				}
+
+				pluginMap[plugin.id] = pluginMap[plugin.id] || {};
+				pluginMap[plugin.id].id = pluginMap[plugin.id].id || plugin.id;
+				pluginMap[plugin.id].name = plugin.name || pluginMap[plugin.id].name;
+				pluginMap[plugin.id].description = plugin.description;
+				pluginMap[plugin.id].url = pluginMap[plugin.id].url || plugin.url;
+				pluginMap[plugin.id].installed = true;
+				pluginMap[plugin.id].isTheme = !!plugin.id.match('nodebb-theme-');
+				pluginMap[plugin.id].error = plugin.error || false;
+				pluginMap[plugin.id].active = plugin.active;
+				pluginMap[plugin.id].version = plugin.version;
+
+				// If package.json defines a version to use, stick to that
+				if (dependencies.hasOwnProperty(plugin.id) && semver.valid(dependencies[plugin.id])) {
+					pluginMap[plugin.id].latest = dependencies[plugin.id];
+				} else {
+					pluginMap[plugin.id].latest = pluginMap[plugin.id].latest || plugin.version;
+				}
+				pluginMap[plugin.id].outdated = semver.gt(pluginMap[plugin.id].latest, pluginMap[plugin.id].version);
+				next();
+			}, function(err) {
 				if (err) {
 					return callback(err);
 				}
 
-				async.each(installedPlugins, function(plugin, next) {
-					// If it errored out because a package.json or plugin.json couldn't be read, no need to do this stuff
-					if (plugin.error) {
-						pluginMap[plugin.id] = pluginMap[plugin.id] || {};
-						pluginMap[plugin.id].installed = true;
-						pluginMap[plugin.id].error = true;
-						return next();
+				var pluginArray = [];
+
+				for (var key in pluginMap) {
+					if (pluginMap.hasOwnProperty(key)) {
+						pluginArray.push(pluginMap[key]);
 					}
+				}
 
-					pluginMap[plugin.id] = pluginMap[plugin.id] || {};
-					pluginMap[plugin.id].id = pluginMap[plugin.id].id || plugin.id;
-					pluginMap[plugin.id].name = plugin.name || pluginMap[plugin.id].name;
-					pluginMap[plugin.id].description = plugin.description;
-					pluginMap[plugin.id].url = pluginMap[plugin.id].url || plugin.url;
-					pluginMap[plugin.id].installed = true;
-					pluginMap[plugin.id].isTheme = !!plugin.id.match('nodebb-theme-');
-					pluginMap[plugin.id].error = plugin.error || false;
-					pluginMap[plugin.id].active = plugin.active;
-					pluginMap[plugin.id].version = plugin.version;
-					pluginMap[plugin.id].latest = pluginMap[plugin.id].latest || plugin.version;
-					pluginMap[plugin.id].outdated = semver.gt(pluginMap[plugin.id].latest, pluginMap[plugin.id].version);
-					next();
-				}, function(err) {
-					if (err) {
-						return callback(err);
+				pluginArray.sort(function(a, b) {
+					if (a.name > b.name ) {
+						return 1;
+					} else if (a.name < b.name ){
+						return -1;
+					} else {
+						return 0;
 					}
-
-					var pluginArray = [];
-
-					for (var key in pluginMap) {
-						if (pluginMap.hasOwnProperty(key)) {
-							pluginArray.push(pluginMap[key]);
-						}
-					}
-
-					pluginArray.sort(function(a, b) {
-						if (a.name > b.name ) {
-							return 1;
-						} else if (a.name < b.name ){
-							return -1;
-						} else {
-							return 0;
-						}
-					});
-
-					callback(null, pluginArray);
 				});
+
+				callback(null, pluginArray);
 			});
 		});
 	};
@@ -344,6 +396,15 @@ var fs = require('fs'),
 
 			translator.addTranslation(language, filename, lang.file);
 		});
+
+		var fallbackPath;
+		for(var resource in Plugins.customLanguageFallbacks) {
+			fallbackPath = Plugins.customLanguageFallbacks[resource];
+			params.router.get('/language/:lang/' + resource + '.json', function(req, res, next) {
+				winston.verbose('[translator] No resource file found for ' + req.params.lang + '/' + resource + ', using provided fallback language file');
+				res.sendFile(fallbackPath);
+			});
+		}
 
 		callback(null);
 	}

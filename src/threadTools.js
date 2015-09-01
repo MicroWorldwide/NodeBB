@@ -125,25 +125,31 @@ var async = require('async'),
 	};
 
 	function togglePin(tid, uid, pin, callback) {
-		topics.getTopicFields(tid, ['cid', 'lastposttime'], function(err, topicData) {
-			if (err) {
-				return callback(err);
+		var topicData;
+		async.waterfall([
+			function(next) {
+				topics.getTopicFields(tid, ['cid', 'lastposttime'], next);
+			},
+			function(_topicData, next) {
+				topicData = _topicData;
+				async.parallel([
+					async.apply(topics.setTopicField, tid, 'pinned', pin ? 1 : 0),
+					async.apply(db.sortedSetAdd, 'cid:' + topicData.cid + ':tids', pin ? Math.pow(2, 53) : topicData.lastposttime, tid)
+				], next);
+			},
+			function(results, next) {
+				var data = {
+					tid: tid,
+					isPinned: pin,
+					uid: uid,
+					cid: topicData.cid
+				};
+
+				plugins.fireHook('action:topic.pin', data);
+
+				next(null, data);
 			}
-
-			topics.setTopicField(tid, 'pinned', pin ? 1 : 0);
-			db.sortedSetAdd('cid:' + topicData.cid + ':tids', pin ? Math.pow(2, 53) : topicData.lastposttime, tid);
-
-			var data = {
-				tid: tid,
-				isPinned: pin,
-				uid: uid,
-				cid: topicData.cid
-			};
-
-			plugins.fireHook('action:topic.pin', data);
-
-			callback(null, data);
-		});
+		], callback);
 	}
 
 	ThreadTools.move = function(tid, cid, uid, callback) {
@@ -176,15 +182,19 @@ var async = require('async'),
 				return callback(err);
 			}
 			var oldCid = topic.cid;
-
-			if(!parseInt(topic.deleted, 10)) {
-				categories.incrementCategoryFieldBy(oldCid, 'topic_count', -1);
-				categories.incrementCategoryFieldBy(cid, 'topic_count', 1);
-			}
-
 			categories.moveRecentReplies(tid, oldCid, cid);
 
-			topics.setTopicField(tid, 'cid', cid, function(err) {
+			async.parallel([
+				function (next) {
+					categories.incrementCategoryFieldBy(oldCid, 'topic_count', -1, next);
+				},
+				function (next) {
+					categories.incrementCategoryFieldBy(cid, 'topic_count', 1, next);
+				},
+				function (next) {
+					topics.setTopicField(tid, 'cid', cid, next);
+				}
+			], function(err) {
 				if (err) {
 					return callback(err);
 				}

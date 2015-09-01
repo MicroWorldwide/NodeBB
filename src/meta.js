@@ -17,13 +17,13 @@ var async = require('async'),
 
 	require('./meta/configs')(Meta);
 	require('./meta/themes')(Meta);
-	require('./meta/title')(Meta);
 	require('./meta/js')(Meta);
 	require('./meta/css')(Meta);
 	require('./meta/sounds')(Meta);
 	require('./meta/settings')(Meta);
 	require('./meta/logs')(Meta);
 	require('./meta/tags')(Meta);
+	require('./meta/dependencies')(Meta);
 	Meta.templates = require('./meta/templates');
 
 	/* Assorted */

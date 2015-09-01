@@ -2,14 +2,14 @@
 
 /* globals define, socket, utils, config, app, ajaxify, templates, Tinycon*/
 
-define('notifications', ['sounds', 'translator'], function(sound, translator) {
+define('notifications', ['sounds', 'translator', 'components'], function(sound, translator, components) {
 	var Notifications = {};
 
 	Notifications.prepareDOM = function() {
-		var notifContainer = $('.notifications'),
+		var notifContainer = components.get('notifications'),
 			notifTrigger = notifContainer.children('a'),
-			notifList = $('#notif-list'),
-			notifIcon = $('.notification-icon');
+			notifList = components.get('notifications/list'),
+			notifIcon = components.get('notifications/icon');
 
 		notifTrigger.on('click', function(e) {
 			e.preventDefault();
@@ -17,25 +17,7 @@ define('notifications', ['sounds', 'translator'], function(sound, translator) {
 				return;
 			}
 
-			socket.emit('notifications.get', null, function(err, data) {
-				if (err) {
-					return app.alertError(err.message);
-				}
-
-				var notifs = data.unread.concat(data.read).sort(function(a, b) {
-					return parseInt(a.datetime, 10) > parseInt(b.datetime, 10) ? -1 : 1;
-				});
-
-				translator.toggleTimeagoShorthand();
-				for(var i=0; i<notifs.length; ++i) {
-					notifs[i].timeago = $.timeago(new Date(parseInt(notifs[i].datetime, 10)));
-				}
-				translator.toggleTimeagoShorthand();
-
-				templates.parse('partials/notifications_list', {notifications: notifs}, function(html) {
-					notifList.translateHtml(html);
-				});
-			});
+			Notifications.loadNotifications(notifList);
 		});
 
 		notifList.on('click', '[data-nid]', function() {
@@ -47,7 +29,7 @@ define('notifications', ['sounds', 'translator'], function(sound, translator) {
 				if (err) {
 					return app.alertError(err.message);
 				}
-				increaseNotifCount(-1);
+				incrementNotifCount(-1);
 			});
 		});
 
@@ -56,7 +38,7 @@ define('notifications', ['sounds', 'translator'], function(sound, translator) {
 				if (err) {
 					app.alertError(err.message);
 				}
-				updateNotifCount(0);
+				Notifications.updateNotifCount(0);
 			});
 		});
 
@@ -73,33 +55,20 @@ define('notifications', ['sounds', 'translator'], function(sound, translator) {
 				}
 
 				liEl.toggleClass('unread');
-				increaseNotifCount(unread ? -1 : 1);
+				incrementNotifCount(unread ? -1 : 1);
 			});
 		});
 
-		function updateNotifCount(count) {
-			if (count > 0) {
-				notifIcon.removeClass('fa-bell-o').addClass('fa-bell');
-			} else {
-				notifIcon.removeClass('fa-bell').addClass('fa-bell-o');
-			}
-
-			notifIcon.toggleClass('unread-count', count > 0);
-			notifIcon.attr('data-content', count > 20 ? '20+' : count);
-
-			Tinycon.setBubble(count);
-		}
-
-		function increaseNotifCount(delta) {
+		function incrementNotifCount(delta) {
 			var count = parseInt(notifIcon.attr('data-content'), 10) + delta;
-			updateNotifCount(count);
+			Notifications.updateNotifCount(count);
 		}
 
 		socket.emit('notifications.getCount', function(err, count) {
 			if (!err) {
-				updateNotifCount(count);
+				Notifications.updateNotifCount(count);
 			} else {
-				updateNotifCount(0);
+				Notifications.updateNotifCount(0);
 			}
 		});
 
@@ -117,14 +86,51 @@ define('notifications', ['sounds', 'translator'], function(sound, translator) {
 				ajaxify.refresh();
 			}
 
-			increaseNotifCount(1);
+			incrementNotifCount(1);
 
 			sound.play('notification');
 		});
 
 		socket.on('event:notifications.updateCount', function(count) {
-			updateNotifCount(count);
+			Notifications.updateNotifCount(count);
 		});
+	};
+
+	Notifications.loadNotifications = function(notifList) {
+		socket.emit('notifications.get', null, function(err, data) {
+			if (err) {
+				return app.alertError(err.message);
+			}
+
+			var notifs = data.unread.concat(data.read).sort(function(a, b) {
+				return parseInt(a.datetime, 10) > parseInt(b.datetime, 10) ? -1 : 1;
+			});
+
+			translator.toggleTimeagoShorthand();
+			for(var i=0; i<notifs.length; ++i) {
+				notifs[i].timeago = $.timeago(new Date(parseInt(notifs[i].datetime, 10)));
+			}
+			translator.toggleTimeagoShorthand();
+
+			templates.parse('partials/notifications_list', {notifications: notifs}, function(html) {
+				notifList.translateHtml(html);
+			});
+		});
+	};
+
+	Notifications.updateNotifCount = function(count) {
+		var notifIcon = components.get('notifications/icon');
+
+		if (count > 0) {
+			notifIcon.removeClass('fa-bell-o').addClass('fa-bell');
+		} else {
+			notifIcon.removeClass('fa-bell').addClass('fa-bell-o');
+		}
+
+		notifIcon.toggleClass('unread-count', count > 0);
+		notifIcon.attr('data-content', count > 20 ? '20+' : count);
+
+		Tinycon.setBubble(count);
 	};
 
 	return Notifications;

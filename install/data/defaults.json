@@ -7,9 +7,11 @@
     "newbiePostDelayThreshold": 3,
     "minimumPostLength": 8,
     "maximumPostLength": 32767,
+    "minimumTagsPerTopic": 0,
+    "maximumTagsPerTopic": 5,
     "allowGuestSearching": 0,
     "allowTopicsThumbnail": 0,
-    "allowRegistration": 1,
+    "registrationType": "normal",
     "allowLocalLogin": 1,
     "allowAccountDelete": 1,
     "allowFileUploads": 0,
@@ -24,5 +26,6 @@
     "maximumProfileImageSize": 256,
     "profileImageDimension": 128,
     "requireEmailConfirmation": 0,
-    "profile:allowProfileImageUploads": 1
+    "profile:allowProfileImageUploads": 1,
+    "teaserPost": "last"
 }

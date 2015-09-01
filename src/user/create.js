@@ -20,7 +20,7 @@ module.exports = function(User) {
 			data.email = validator.escape(data.email.trim());
 		}
 
-		isDataValid(data, function(err) {
+		User.isDataValid(data, function(err) {
 			if (err)  {
 				return callback(err);
 			}
@@ -53,25 +53,13 @@ module.exports = function(User) {
 				renamedUsername: function(next) {
 					renameUsername(userData, next);
 				},
-				customFields: function(next) {
-					plugins.fireHook('filter:user.custom_fields', [], next);
-				},
 				userData: function(next) {
-					plugins.fireHook('filter:user.create', userData, next);
+					plugins.fireHook('filter:user.create', {user: userData, data: data}, next);
 				}
 			}, function(err, results) {
 				if (err) {
 					return callback(err);
 				}
-
-				var customData = {};
-				results.customFields.forEach(function(customField) {
-					if (data[customField]) {
-						customData[customField] = data[customField];
-					}
-				});
-
-				userData = utils.merge(results.userData, customData);
 
 				var userNameChanged = !!results.renamedUsername;
 
@@ -155,7 +143,7 @@ module.exports = function(User) {
 		});
 	};
 
-	function isDataValid(userData, callback) {
+	User.isDataValid = function(userData, callback) {
 		async.parallel({
 			emailValid: function(next) {
 				if (userData.email) {
@@ -186,8 +174,10 @@ module.exports = function(User) {
 					next();
 				}
 			}
-		}, callback);
-	}
+		}, function(err, results) {
+			callback(err);
+		});
+	};
 
 	function renameUsername(userData, callback) {
 		meta.userOrGroupExists(userData.userslug, function(err, exists) {

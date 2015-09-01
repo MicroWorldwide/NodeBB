@@ -1,7 +1,7 @@
 {
     "title": "Ειδοποιήσεις",
     "no_notifs": "Δεν έχεις νέες ειδοποιήσεις;",
-    "see_all": "Προβολή όλων των ειδοποιήσεων",
+    "see_all": "See all notifications",
     "mark_all_read": "Mark all notifications read",
     "back_to_home": "Πίσω στο %1",
     "outgoing_link": "Εξερχόμενος Σύνδεσμος",
@@ -20,6 +20,7 @@
     "user_posted_topic": "<strong>%1</strong> has posted a new topic: <strong>%2</strong>",
     "user_mentioned_you_in": "Ο/Η <strong>%1</strong> σε ανέφερε στο <strong>%2</strong>",
     "user_started_following_you": "Ο/Η <strong>%1</strong> σε ακολουθεί.",
+    "new_register": "<strong>%1</strong> sent a registration request.",
     "email-confirmed": "Το Εmail Επιβεβαιώθηκε",
     "email-confirmed-message": "Ευχαριστούμε που επιβεβαίωσες το email σου. Ο λογαριασμός σου είναι πλέον πλήρως ενεργοποιημένος.",
     "email-confirm-error-message": "Υπήρξε κάποιο πρόβλημα με την επιβεβαίωση της διεύθυνσής email σου. Ίσως ο κώδικας να είναι άκυρος ή να έχει λήξει.",

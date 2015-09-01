@@ -28,6 +28,7 @@
 	"pagination.enter_index": "Enter index",
 
 	"header.admin": "Admin",
+	"header.categories": "Categories",
 	"header.recent": "Recent",
 	"header.unread": "Unread",
 	"header.tags": "Tags",
@@ -38,6 +39,7 @@
 	"header.notifications": "Notifications",
 	"header.search": "Search",
 	"header.profile": "Profile",
+	"header.navigation": "Navigation",
 
 	"notifications.loading": "Loading Notifications",
 	"chats.loading": "Loading Chats",
@@ -86,7 +88,7 @@
 
 	"online": "Online",
 	"away": "Away",
-	"dnd": "Do not Disturb",
+	"dnd": "Do not disturb",
 	"invisible": "Invisible",
 	"offline": "Offline",
 

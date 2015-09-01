@@ -1,5 +1,5 @@
 <div id="navigation">
-	<div class="col-lg-6">
+	<div class="col-lg-9">
 		<div class="panel panel-default">
 			<div class="panel-heading">Active Navigation</div>
 			<div class="panel-body">
@@ -7,26 +7,33 @@
 					<!-- BEGIN enabled -->
 					<li class="well">
 						<form>
-							<label>ID: <small>optional</small>
-								<input class="form-control" type="text" name="id" value="{enabled.id}" />
-							</label>
-							<label>Route: <small>ex. /unread</small>
-								<input class="form-control" type="text" name="route" value="{enabled.route}" />
-							</label>
-							<label>Title: <small>shown upon mouseover</small>
-								<input class="form-control" type="text" name="title" value="{enabled.title}" />
-							</label>
-							<label>Text:
-								<input class="form-control" type="text" name="text" value="{enabled.text}" />
-							</label>
-							<label>Icon Class: <small><a href="http://fortawesome.github.io/Font-Awesome/cheatsheet/" target="_blank">pick one</a></small>
-								<input class="form-control" type="text" name="iconClass" value="{enabled.iconClass}" />
-							</label>
-							<label>Text Class: <small>optional</small>
-								<input class="form-control" type="text" name="textClass" value="{enabled.textClass}" />
-							</label>
+							<div class="row">
+								<div class="col-sm-6">
+									<label>ID: <small>optional</small>
+										<input class="form-control" type="text" name="id" value="{enabled.id}" />
+									</label>
+									<label>Title: <small>shown upon mouseover</small>
+										<input class="form-control" type="text" name="title" value="{enabled.title}" />
+									</label>
+									<label>Icon Class: <small><a href="http://fortawesome.github.io/Font-Awesome/cheatsheet/" target="_blank">pick one</a></small>
+										<input class="form-control" type="text" name="iconClass" value="{enabled.iconClass}" />
+									</label>
+								</div>
+								<div class="col-sm-6">
+									<label>Route: <small>ex. /unread</small>
+										<input class="form-control" type="text" name="route" value="{enabled.route}" />
+									</label>
+									<label>Text:
+										<input class="form-control" type="text" name="text" value="{enabled.text}" />
+									</label>
+									<label>Text Class: <small>optional</small>
+										<input class="form-control" type="text" name="textClass" value="{enabled.textClass}" />
+									</label>
+								</div>
+							</div>
 
 							<hr />
+
 							<strong>Properties:</strong>
 							<div class="checkbox">
 								<label>
@@ -36,6 +43,11 @@
 							<div class="checkbox">
 								<label>
 									<input type="checkbox" name="property:loggedIn" <!-- IF enabled.properties.loggedIn -->checked<!-- ENDIF enabled.properties.loggedIn -->/> <strong>Only display to logged in users</strong>
+								</label>
+							</div>
+							<div class="checkbox">
+								<label>
+									<input type="checkbox" name="property:targetBlank" <!-- IF enabled.properties.targetBlank -->checked<!-- ENDIF enabled.properties.targetBlank -->/> <strong>Open in a new window</strong>
 								</label>
 							</div>
 
@@ -70,18 +82,12 @@
 						<span class="pull-right badge"><!-- IF available.core -->core<!-- ELSE -->plugin<!-- ENDIF available.core --></span>
 					</li>
 					<!-- END available -->
-					<input type="hidden" template-variable="available" value="{function.stringify, available}" />
 				</ul>
 			</div>
 		</div>
 	</div>
-
-	<div class="col-lg-3 acp-sidebar">
-		<div class="panel panel-default">
-			<div class="panel-heading">Navigation Control</div>
-			<div class="panel-body">
-				<button class="btn btn-primary btn-md" id="save">Save Changes</button>
-			</div>
-		</div>
-	</div>
 </div>
+
+<button id="save" class="floating-button mdl-button mdl-js-button mdl-button--fab mdl-js-ripple-effect mdl-button--colored">
+	<i class="material-icons">save</i>
+</button>

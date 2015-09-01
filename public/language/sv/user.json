@@ -6,8 +6,12 @@
     "postcount": "Antal inlägg",
     "email": "Epost",
     "confirm_email": "Bekräfta epostadress ",
+    "ban_account": "Bannlys konto",
+    "ban_account_confirm": "Vill du verkligen bannlysa den här användaren?",
+    "unban_account": "Ta bort bannlysning",
     "delete_account": "Ta bort ämne",
     "delete_account_confirm": "Är du säker på att du vill radera ditt konto?<br /><strong>Denna åtgärd går inte att ångra och du kommer inte kunna återställa ditt konto</strong><br /><br />Skriv in ditt användarnamn för att bekräfta att du vill radera ditt konto.",
+    "delete_this_account_confirm": "Är du säker på att du vill ta bort detta konto? <br /><strong>Detta går ej att ångra - data går förlorad för alltid</strong><br /><br />",
     "fullname": "Hela namnet",
     "website": "Webbsida",
     "location": "Plats",
@@ -64,9 +68,9 @@
     "settings-require-reload": "Vissa inställningar som ändrades kräver att sidan laddas om. Klicka här för att ladda om sidan.",
     "has_no_follower": "Denna användare har inga följare :(",
     "follows_no_one": "Denna användare följer ingen :(",
-    "has_no_posts": "Denna användare har inte gjort några inlägg än.",
-    "has_no_topics": "Den här användaren har inte skrivit något inlägg ännu.",
-    "has_no_watched_topics": "Den här användaren bevakar inga ämnen ännu.",
+    "has_no_posts": "Användaren har inte skrivit några inlägg ännu",
+    "has_no_topics": "Användaren har inte skrivit några ämnen ännu",
+    "has_no_watched_topics": "Användaren har inte bevakat några ämnen ännu",
     "email_hidden": "Epost dold",
     "hidden": "dold",
     "paginate_description": "Gör så att ämnen och inlägg visas som sidor istället för oändlig skroll",
@@ -80,5 +84,6 @@
     "follow_topics_you_reply_to": "Följ ämnen som du svarat på",
     "follow_topics_you_create": "Följ ämnen du skapat",
     "grouptitle": "Välj tittel för gruppen så som du vill att den ska visas",
-    "no-group-title": "Ingen titel på gruppen"
+    "no-group-title": "Ingen titel på gruppen",
+    "select-skin": "Select a Skin"
 }

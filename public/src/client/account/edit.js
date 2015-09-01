@@ -10,8 +10,8 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 		currentEmail;
 
 	AccountEdit.init = function() {
-		gravatarPicture = ajaxify.variables.get('gravatarpicture');
-		uploadedPicture = ajaxify.variables.get('uploadedpicture');
+		gravatarPicture = ajaxify.data.gravatarpicture;
+		uploadedPicture = ajaxify.data.uploadedpicture;
 
 		header.init();
 
@@ -87,18 +87,20 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 	}
 
 	function updateHeader(picture, username, userslug) {
-		if (parseInt(ajaxify.variables.get('theirid'), 10) !== parseInt(ajaxify.variables.get('yourid'), 10)) {
-			return;
-		}
+		require(['components'], function(components) {
+			if (parseInt(ajaxify.data.theirid, 10) !== parseInt(ajaxify.data.yourid, 10)) {
+				return;
+			}
 
-		if (picture) {
-			$('#user-header-picture').attr('src', picture);
-		}
+			if (picture) {
+				components.get('header/userpicture').attr('src', picture);
+			}
 
-		if (username && userslug) {
-			$('#user-profile-link').attr('href', config.relative_path + '/user/' + userslug);
-			$('#user-header-name').text(username);
-		}
+			if (username && userslug) {
+				components.get('header/profilelink').attr('href', config.relative_path + '/user/' + userslug);
+				components.get('header/username').text(username);
+			}
+		});
 	}
 
 	function handleImageChange() {
@@ -190,7 +192,7 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 		$('#uploadPictureBtn').on('click', function() {
 
 			$('#change-picture-modal').modal('hide');
-			uploader.open(config.relative_path + '/api/user/' + ajaxify.variables.get('userslug') + '/uploadpicture', {}, config.maximumProfileImageSize, function(imageUrlOnServer) {
+			uploader.open(config.relative_path + '/api/user/' + ajaxify.data.userslug + '/uploadpicture', {}, config.maximumProfileImageSize, function(imageUrlOnServer) {
 				onUploadComplete(imageUrlOnServer);
 			});
 
@@ -207,7 +209,7 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 				if (!url) {
 					return;
 				}
-				socket.emit('user.uploadProfileImageFromUrl', {url: url, uid: ajaxify.variables.get('theirid')}, function(err, imageUrlOnServer) {
+				socket.emit('user.uploadProfileImageFromUrl', {url: url, uid: ajaxify.data.theirid}, function(err, imageUrlOnServer) {
 					if (err) {
 						return app.alertError(err.message);
 					}
@@ -243,7 +245,6 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 		var password_confirm = $('#inputNewPasswordAgain');
 		var passwordvalid = false;
 		var passwordsmatch = false;
-		var successIcon = '<i class="fa fa-check"></i>';
 
 		function onPasswordChanged() {
 			if (password.val().length < config.minimumPasswordLength) {
@@ -253,7 +254,7 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 				showError(password_notify, '[[user:change_password_error]]');
 				passwordvalid = false;
 			} else {
-				showSuccess(password_notify, successIcon);
+				showSuccess(password_notify);
 				passwordvalid = true;
 			}
 		}
@@ -264,9 +265,11 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 				passwordsmatch = false;
 			} else {
 				if (password.val()) {
-					showSuccess(password_confirm_notify, successIcon);
+					showSuccess(password_confirm_notify);
 				} else {
-					removeAlert(password_confirm_notify);
+					password_confirm_notify.parent().removeClass('alert-success alert-danger');
+					password_confirm_notify.children().show();
+					password_confirm_notify.find('.msg').html('');
 				}
 
 				passwordsmatch = true;
@@ -286,7 +289,7 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 				socket.emit('user.changePassword', {
 					'currentPassword': currentPassword.val(),
 					'newPassword': password.val(),
-					'uid': ajaxify.variables.get('theirid')
+					'uid': ajaxify.data.theirid
 				}, function(err) {
 					btn.removeClass('disabled').find('i').addClass('hide');
 					currentPassword.val('');
@@ -319,7 +322,7 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 	function changeUserPicture(type, callback) {
 		socket.emit('user.changePicture', {
 			type: type,
-			uid: ajaxify.variables.get('theirid')
+			uid: ajaxify.data.theirid
 		}, callback);
 	}
 
@@ -365,7 +368,8 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 
 	function showError(element, msg) {
 		translator.translate(msg, function(msg) {
-			element.html(msg);
+			element.find('.error').html(msg).removeClass('hide').siblings().addClass('hide');
+
 			element.parent()
 				.removeClass('alert-success')
 				.addClass('alert-danger');
@@ -373,19 +377,12 @@ define('forum/account/edit', ['forum/account/header', 'uploader', 'translator'],
 		});
 	}
 
-	function showSuccess(element, msg) {
-		translator.translate(msg, function(msg) {
-			element.html(msg);
-			element.parent()
-				.removeClass('alert-danger')
-				.addClass('alert-success');
-			element.show();
-		});
-	}
-
-	function removeAlert(element) {
-		element.html('');
-		element.parent().removeClass('alert-success alert-danger');
+	function showSuccess(element) {
+		element.find('.success').removeClass('hide').siblings().addClass('hide');
+		element.parent()
+			.removeClass('alert-danger')
+			.addClass('alert-success');
+		element.show();
 	}
 
 	return AccountEdit;

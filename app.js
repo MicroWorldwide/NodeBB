@@ -43,7 +43,7 @@ winston.add(winston.transports.Console, {
 		var date = new Date();
 		return date.getDate() + '/' + (date.getMonth() + 1) + ' ' + date.toTimeString().substr(0,5) + ' [' + global.process.pid + ']';
 	},
-	level: (global.env === 'production' || nconf.get('log-level') === 'info') ? 'info' : 'verbose'
+	level: nconf.get('log-level') || (global.env === 'production' ? 'info' : 'verbose')
 });
 
 if(os.platform() === 'linux') {
@@ -95,7 +95,7 @@ function loadConfig() {
 	// Ensure themes_path is a full filepath
 	nconf.set('themes_path', path.resolve(__dirname, nconf.get('themes_path')));
 	nconf.set('core_templates_path', path.join(__dirname, 'src/views'));
-	nconf.set('base_templates_path', path.join(nconf.get('themes_path'), 'nodebb-theme-vanilla/templates'));
+	nconf.set('base_templates_path', path.join(nconf.get('themes_path'), 'nodebb-theme-persona/templates'));
 
 	if (!process.send) {
 		// If run using `node app`, log GNU copyright info along with server info
@@ -118,6 +118,7 @@ function start() {
 	var urlObject = url.parse(nconf.get('url'));
 	var relativePath = urlObject.pathname !== '/' ? urlObject.pathname : '';
 	nconf.set('base_url', urlObject.protocol + '//' + urlObject.host);
+	nconf.set('secure', urlObject.protocol === 'https');
 	nconf.set('use_port', !!urlObject.port);
 	nconf.set('relative_path', relativePath);
 	nconf.set('port', urlObject.port || nconf.get('port') || nconf.get('PORT') || 4567);
@@ -183,15 +184,12 @@ function start() {
 			require('./src/meta').configs.init(next);
 		},
 		function(next) {
+			require('./src/meta').dependencies.check(next);
+		},
+		function(next) {
 			require('./src/upgrade').check(next);
 		},
-		function(schema_ok, next) {
-			if (!schema_ok && nconf.get('check-schema') !== false) {
-				winston.warn('Your NodeBB schema is out-of-date. Please run the following command to bring your dataset up to spec:');
-				winston.warn('    ./nodebb upgrade');
-				process.exit();
-				return;
-			}
+		function(next) {
 			var webserver = require('./src/webserver');
 			require('./src/socket.io').init(webserver.server);
 
@@ -204,12 +202,25 @@ function start() {
 		}
 	], function(err) {
 		if (err) {
-			if (err.stacktrace !== false) {
-				winston.error(err.stack);
-			} else {
-				winston.error(err.message);
+			switch(err.message) {
+				case 'schema-out-of-date':
+					winston.warn('Your NodeBB schema is out-of-date. Please run the following command to bring your dataset up to spec:');
+					winston.warn('    ./nodebb upgrade');
+					break;
+				case 'dependencies-out-of-date':
+					winston.warn('One or more of NodeBB\'s dependent packages are out-of-date. Please run the following command to update them:');
+					winston.warn('    ./nodebb upgrade');
+					break;
+				default:
+					if (err.stacktrace !== false) {
+						winston.error(err.stack);
+					} else {
+						winston.error(err.message);
+					}
+					break;
 			}
 
+			// Either way, bad stuff happened. Abort start.
 			process.exit();
 		}
 	});
@@ -335,9 +346,9 @@ function resetThemes(callback) {
 
 	meta.themes.set({
 		type: 'local',
-		id: 'nodebb-theme-vanilla'
+		id: 'nodebb-theme-persona'
 	}, function(err) {
-		winston.info('[reset] Theme reset to Vanilla');
+		winston.info('[reset] Theme reset to Persona');
 		if (typeof callback === 'function') {
 			callback(err);
 		} else {

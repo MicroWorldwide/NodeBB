@@ -12,10 +12,11 @@ var async = require('async'),
 groupsController.list = function(req, res, next) {
 	var sort = req.query.sort || 'alpha';
 
-	groupsController.getGroupsFromSet(req.uid, sort, 0, 8, function(err, data) {
+	groupsController.getGroupsFromSet(req.uid, sort, 0, 14, function(err, data) {
 		if (err) {
 			return next(err);
 		}
+		data.title = '[[pages:groups]]';
 		res.render('groups/list', data);
 	});
 };
@@ -35,65 +36,60 @@ groupsController.getGroupsFromSet = function(uid, sort, start, stop, callback) {
 
 		callback(null, {
 			groups: groups,
-		 	allowGroupCreation: parseInt(meta.config.allowGroupCreation, 10) === 1,
-		 	nextStart: stop + 1
+			allowGroupCreation: parseInt(meta.config.allowGroupCreation, 10) === 1,
+			nextStart: stop + 1
 		});
 	});
 };
 
-groupsController.details = function(req, res, next) {
+groupsController.details = function(req, res, callback) {
 	async.waterfall([
 		async.apply(groups.exists, res.locals.groupName),
 		function(exists, next) {
 			if (!exists) {
-				return next(undefined, null);
+				return callback();
 			}
 
-			// Ensure the group isn't hidden either
 			groups.isHidden(res.locals.groupName, next);
 		},
 		function(hidden, next) {
-			if (hidden === null) { return next(undefined, false); }		// Group didn't exist, not ok
-
 			if (!hidden) {
-				next(null, true);
-			} else {
-				// If not, only members are granted access
-				async.parallel([
-					async.apply(groups.isMember, req.uid, res.locals.groupName),
-					async.apply(groups.isInvited, req.uid, res.locals.groupName)
-				], function(err, checks) {
-					next(err, checks[0] || checks[1]);
-				});
+				return next();
 			}
-		}
-	], function(err, ok) {
-		if (err) {
-			return next(err);
-		}
 
-		if (!ok) {
-			return helpers.redirect(res, '/groups');
+			async.parallel({
+				isMember: async.apply(groups.isMember, req.uid, res.locals.groupName),
+				isInvited: async.apply(groups.isInvited, req.uid, res.locals.groupName)
+			}, function(err, checks) {
+				if (err || checks.isMember || checks.isInvited) {
+					return next(err);
+				}
+				callback();
+			});
+		}
+	], function(err) {
+		if (err) {
+			return callback(err);
 		}
 
 		async.parallel({
 			group: function(next) {
 				groups.get(res.locals.groupName, {
-					uid: req.uid
+					uid: req.uid,
+					truncateUserList: true,
+					userListCount: 20
 				}, next);
 			},
 			posts: function(next) {
 				groups.getLatestMemberPosts(res.locals.groupName, 10, req.uid, next);
-			}
+			},
+			isAdmin: async.apply(user.isAdministrator, req.uid)
 		}, function(err, results) {
-			if (err) {
-				return next(err);
+			if (err || !results.group) {
+				return callback(err);
 			}
 
-			if (!results.group) {
-				return helpers.notFound(req, res);
-			}
-
+			results.title = '[[pages:group, ' + results.group.displayName + ']]';
 			res.render('groups/details', results);
 		});
 	});

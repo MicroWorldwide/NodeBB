@@ -5,6 +5,7 @@ var async = require('async'),
 	winston = require('winston'),
 	_ = require('underscore'),
 
+	meta = require('../meta'),
 	db = require('../database'),
 	posts = require('../posts'),
 	topics = require('../topics'),
@@ -48,24 +49,81 @@ module.exports = function(Categories) {
 				privileges.posts.filter('read', pids, uid, next);
 			},
 			function(pids, next) {
-				posts.getPostSummaryByPids(pids, uid, {stripTags: true}, next);
+				if (meta.config.teaserPost === 'first') {
+					getMainPosts(pids, uid, next);
+				} else {
+					posts.getPostSummaryByPids(pids, uid, {stripTags: true}, next);
+				}
 			},
 			function(posts, next) {
-				categoryData.forEach(function(category) {
-					assignPostsToCategory(category, posts);
-				});
+				assignPostsToCategories(categoryData, posts);
+
+				bubbleUpChildrenPosts(categoryData);
+
 				next();
 			}
 		], callback);
 	};
 
-	function assignPostsToCategory(category, posts) {
-		category.posts = posts.filter(function(post) {
-			return post.category && (parseInt(post.category.cid, 10) === parseInt(category.cid, 10)
-				|| parseInt(post.category.parentCid, 10) === parseInt(category.cid, 10));
-		}).sort(function(a, b) {
-			return b.timestamp - a.timestamp;
-		}).slice(0, parseInt(category.numRecentReplies, 10));
+	function getMainPosts(pids, uid, callback) {
+		async.waterfall([
+			function(next) {
+				var keys = pids.map(function(pid) {
+					return 'post:' + pid;
+				});
+				db.getObjectsFields(keys, ['tid'], next);
+			},
+			function(posts, next) {
+				var keys = posts.map(function(post) {
+					return 'topic:' + post.tid;
+				});
+				db.getObjectsFields(keys, ['mainPid'], next);
+			},
+			function(topics, next) {
+				var mainPids = topics.map(function(topic) {
+					return topic.mainPid;
+				});
+				posts.getPostSummaryByPids(mainPids, uid, {stripTags: true}, next);
+			}
+		], callback);
+	}
+
+	function bubbleUpChildrenPosts(categoryData) {
+		categoryData.forEach(function(category) {
+			if (category.posts.length) {
+				return;
+			}
+			var posts = [];
+			getPostsRecursive(category, posts);
+
+			posts.sort(function(a, b) {
+				return b.timestamp - a.timestamp;
+			});
+			if (posts.length) {
+				category.posts = [posts[0]];
+			}
+		});
+	}
+
+	function getPostsRecursive(category, posts) {
+		category.posts.forEach(function(p) {
+			posts.push(p);
+		});
+
+		category.children.forEach(function(child) {
+			getPostsRecursive(child, posts);
+		});
+	}
+
+	function assignPostsToCategories(categories, posts) {
+		categories.forEach(function(category) {
+			category.posts = posts.filter(function(post) {
+				return post.category && (parseInt(post.category.cid, 10) === parseInt(category.cid, 10) ||
+					parseInt(post.category.parentCid, 10) === parseInt(category.cid, 10));
+			}).sort(function(a, b) {
+				return b.timestamp - a.timestamp;
+			}).slice(0, parseInt(category.numRecentReplies, 10));
+		});
 	}
 
 	function getRecentTopicPids(category, callback) {

@@ -13,6 +13,8 @@ define('admin/extend/plugins', function() {
 			return;
 		}
 
+		$('#plugin-search').val('');
+
 		pluginsList.on('click', 'button[data-action="toggleActive"]', function() {
 			pluginID = $(this).parents('li').attr('data-plugin-id');
 			var btn = $(this);
@@ -181,28 +183,17 @@ define('admin/extend/plugins', function() {
 		socket.emit('admin.plugins.toggleInstall', {
 			id: pluginID,
 			version: version
-		}, function(err, status) {
+		}, function(err, pluginData) {
 			if (err) {
 				return app.alertError(err.message);
 			}
 
-			if (status.installed) {
-				btn.html('<i class="fa fa-trash-o"></i> Uninstall');
-			} else {
-				btn.html('<i class="fa fa-download"></i> Install');
-			}
-
-			activateBtn.toggleClass('hidden', !status.installed);
-
-			btn.toggleClass('btn-danger', status.installed)
-				.toggleClass('btn-success', !status.installed)
-				.attr('disabled', false)
-				.attr('data-installed', status.installed ? 1 : 0);
+			ajaxify.refresh();
 
 			app.alert({
 				alert_id: 'plugin_toggled',
-				title: 'Plugin ' + (status.installed ? 'Installed' : 'Uninstalled'),
-				message: status.installed ? 'Plugin successfully installed, please activate the plugin.' : 'The plugin has been successfully deactivated and uninstalled.',
+				title: 'Plugin ' + (pluginData.installed ? 'Installed' : 'Uninstalled'),
+				message: pluginData.installed ? 'Plugin successfully installed, please activate the plugin.' : 'The plugin has been successfully deactivated and uninstalled.',
 				type: 'info',
 				timeout: 5000
 			});
