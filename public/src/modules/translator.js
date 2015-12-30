@@ -264,28 +264,47 @@
 		var fs = require('fs'),
 			path = require('path'),
 			winston = require('winston'),
+			file = require('../../../src/file'),
+			plugins = require('../../../src/plugins'),
 			meta = require('../../../src/meta');
 
 		language = language || meta.config.defaultLang || 'en_GB';
 
-		if (!fs.existsSync(path.join(__dirname, '../../language', language))) {
+		if (!file.existsSync(path.join(__dirname, '../../language', language))) {
 			winston.warn('[translator] Language \'' + meta.config.defaultLang + '\' not found. Defaulting to \'en_GB\'');
 			language = 'en_GB';
 		}
 
 		fs.readFile(path.join(__dirname, '../../language', language, filename + '.json'), function(err, data) {
-			if (err) {
-				winston.error('Could not load `' + filename + '`: ' + err.message + '. Skipping...');
-				return callback({});
+			var onData = function(data) {
+				try {
+					data = JSON.parse(data.toString());
+				} catch (e) {
+					winston.error('Could not parse `' + filename + '.json`, syntax error? Skipping...');
+					data = {};
+				}
+				callback(data);
 			}
 
-			try {
-				data = JSON.parse(data.toString());
-			} catch (e) {
-				winston.error('Could not parse `' + filename + '.json`, syntax error? Skipping...');
-				data = {};
+			if (err) {
+				if (err.code === 'ENOENT' && plugins.customLanguageFallbacks.hasOwnProperty(filename)) {
+					// Resource non-existant but fallback exists
+					return fs.readFile(plugins.customLanguageFallbacks[filename], {
+						encoding: 'utf-8'
+					}, function(err, data) {
+						if (err) {
+							return winston.error('[translator] Could not load fallback language file for resource ' + filename);
+						}
+
+						onData(data);
+					})
+				} else {
+					winston.error('[translator] Could not load `' + filename + '`: ' + err.message + '. Skipping...');
+					return callback({});
+				}
 			}
-			callback(data);
+
+			onData(data);
 		});
 	}
 

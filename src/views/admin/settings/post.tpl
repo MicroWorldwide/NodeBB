@@ -29,40 +29,48 @@
 	<div class="col-sm-10 col-xs-12">
 		<form>
 			<div class="form-group">
-				<label>Seconds between Posts</label>
-				<input type="text" class="form-control" value="10" data-field="postDelay">
+				<label for="postDelay">Seconds between Posts</label>
+				<input id="postDelay" type="text" class="form-control" value="10" data-field="postDelay">
 			</div>
 			<div class="form-group">
-				<label>Seconds between Posts for New Users</label>
-				<input type="text" class="form-control" value="120" data-field="newbiePostDelay">
+				<label for="newbiePostDelay">Seconds between Posts for New Users</label>
+				<input id="newbiePostDelay" type="text" class="form-control" value="120" data-field="newbiePostDelay">
 			</div>
 			<div class="form-group">
-				<label>Reputation threshold before this restriction is lifted</label>
-				<input type="text" class="form-control" value="3" data-field="newbiePostDelayThreshold">
+				<label for="newbiePostDelayThreshold">Reputation threshold before this restriction is lifted</label>
+				<input id="newbiePostDelayThreshold" type="text" class="form-control" value="3" data-field="newbiePostDelayThreshold">
 			</div>
 			<div class="form-group">
-				<label>Seconds before new user can post</label>
-				<input type="text" class="form-control" value="10" data-field="initialPostDelay">
+				<label for="initialPostDelay">Seconds before new user can post</label>
+				<input id="initialPostDelay" type="text" class="form-control" value="10" data-field="initialPostDelay">
 			</div>
 			<div class="form-group">
-				<label>Number of seconds users are allowed to edit posts after posting. (0 disabled)</label>
-				<input type="text" class="form-control" value="0" data-field="postEditDuration">
+				<label for="postEditDuration">Number of seconds users are allowed to edit posts after posting. (0 disabled)</label>
+				<input id="postEditDuration" type="text" class="form-control" value="0" data-field="postEditDuration">
 			</div>
 			<div class="form-group">
-				<label>Minimum Title Length</label>
-				<input type="text" class="form-control" value="3" data-field="minimumTitleLength">
+				<label for="minimumTitleLength">Minimum Title Length</label>
+				<input id="minimumTitleLength" type="text" class="form-control" value="3" data-field="minimumTitleLength">
 			</div>
 			<div class="form-group">
-				<label>Maximum Title Length</label>
-				<input type="text" class="form-control" value="255" data-field="maximumTitleLength">
+				<label for="maximumTitleLength">Maximum Title Length</label>
+				<input id="maximumTitleLength" type="text" class="form-control" value="255" data-field="maximumTitleLength">
 			</div>
 			<div class="form-group">
-				<label>Minimum Post Length</label>
-				<input type="text" class="form-control" value="8" data-field="minimumPostLength">
+				<label for="minimumPostLength">Minimum Post Length</label>
+				<input id="minimumPostLength" type="text" class="form-control" value="8" data-field="minimumPostLength">
 			</div>
 			<div class="form-group">
-				<label>Maximum Post Length</label>
-				<input type="text" class="form-control" value="32767" data-field="maximumPostLength">
+				<label for="maximumPostLength">Maximum Post Length</label>
+				<input id="maximumPostLength" type="text" class="form-control" value="32767" data-field="maximumPostLength">
+			</div>
+			<div class="form-group">
+				<label for="topicStaleDays">Days until Topic is considered stale</label>
+				<input id="topicStaleDays" type="text" class="form-control" value="60" data-field="topicStaleDays">
+				<p class="help-block">
+					If a topic is considered "stale", then a warning will be shown to users who attempt to reply
+					to that topic.
+				</p>
 			</div>
 		</form>
 	</div>
@@ -115,15 +123,6 @@
 </div>
 
 <div class="row">
-	<div class="col-sm-2 col-xs-12 settings-header">Chat Settings</div>
-	<div class="col-sm-10 col-xs-12">
-		<form>
-			<strong>Chat Message Inbox Size</strong><br /> <input type="text" class="form-control" value="250" data-field="chatMessageInboxSize">
-		</form>
-	</div>
-</div>
-
-<div class="row">
 	<div class="col-sm-2 col-xs-12 settings-header">Upload Settings</div>
 	<div class="col-sm-10 col-xs-12">
 		<form>
@@ -133,13 +132,18 @@
 					<span class="mdl-switch__label"><strong>Allow users to upload regular files</strong></span>
 				</label>
 			</div>
+
 			<div class="checkbox">
 				<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
 					<input class="mdl-switch__input" type="checkbox" data-field="privateUploads">
 					<span class="mdl-switch__label"><strong>Make uploaded files private</strong></span>
 				</label>
 			</div>
-			<strong>Maximum File Size</strong><br /> <input type="text" class="form-control" value="2048" data-field="maximumFileSize"><br />
+			
+			<div class="form-group">
+				<label for="maximumFileSize">Maximum File Size</label>
+				<input type="text" class="form-control" value="2048" data-field="maximumFileSize">
+			</div>
 
 			<div class="checkbox">
 				<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
@@ -147,10 +151,20 @@
 					<span class="mdl-switch__label"><strong>Allow users to upload topic thumbnails</strong></span>
 				</label>
 			</div>
-			<strong>Topic Thumb Size</strong><br /> <input type="text" class="form-control" value="120" data-field="topicThumbSize"> <br />
 
-			<strong>Allowed file types, (ie png, pdf, zip). Leave empty to allow all.</strong><br /> <input type="text" class="form-control" value="" data-field="allowedFileExtensions"><br />
+			<div class="form-group">
+				<label for="topicThumbSize">Topic Thumb Size</label>
+				<input type="text" class="form-control" value="120" data-field="topicThumbSize"> 
+			</div>
 
+			<div class="form-group">
+				<label for="allowedFileExtensions">Allowed File Extensions</label>
+				<input type="text" class="form-control" value="" data-field="allowedFileExtensions" />
+				<p class="help-block">
+					Enter comma-separated list of file extensions here (e.g. <code>pdf,xls,doc</code>).
+					An empty list means all extensions are allowed.
+				</p>
+			</div>
 		</form>
 	</div>
 </div>

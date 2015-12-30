@@ -1,5 +1,5 @@
 "use strict";
-/*global componentHandler, define, socket, app, ajaxify, utils, bootbox, Mousetrap, Hammer, RELATIVE_PATH*/
+/*global config, translator, componentHandler, define, socket, app, ajaxify, utils, bootbox, Mousetrap, Hammer, Slideout, RELATIVE_PATH*/
 
 (function() {
 	$(document).ready(function() {
@@ -26,22 +26,6 @@
 		configureSlidemenu();
 	});
 
-	socket.emit('admin.config.get', function(err, config) {
-		if(err) {
-			return app.alert({
-				alert_id: 'config_status',
-				timeout: 2500,
-				title: 'Error',
-				message: 'NodeBB encountered a problem getting config: ' + err.message,
-				type: 'danger'
-			});
-		}
-
-		// move this to admin.config
-		app.config = config;
-		$(window).trigger('action:config.loaded');
-	});
-
 	function setupKeybindings() {
 		Mousetrap.bind('ctrl+shift+a r', function() {
 			require(['admin/modules/instance'], function(instance) {
@@ -63,7 +47,8 @@
 	function selectMenuItem(url) {
 		url = url
 			.replace(/\/\d+$/, '')
-			.split('/').slice(0, 3).join('/');
+			.split('/').slice(0, 3).join('/')
+			.split('?')[0];
 
 		// If index is requested, load the dashboard
 		if (url === 'admin') {
@@ -84,6 +69,14 @@
 				$('#main-page-title').text(menu.text() + (menu.parents('.menu-item').children('a').text() === 'Settings' ? ' Settings' : ''));
 			}
 		});
+
+		var acpPath = url.replace('admin/', '').split('/');
+		acpPath.forEach(function(path, i) {
+			acpPath[i] = path.charAt(0).toUpperCase() + path.slice(1);
+		});
+		acpPath = acpPath.join(' > ');
+
+		document.title = (url === 'admin/general/dashboard' ? 'Dashboard' : acpPath) + ' | NodeBB Admin Control Panel';
 	}
 
 	function setupRestartLinks() {
@@ -105,7 +98,9 @@
 	}
 
 	function launchSnackbar(params) {
-		translator.translate("<strong>" + params.title + "</strong>" + params.message, function(html) {
+		var message = (params.title ? "<strong>" + params.title + "</strong>" : '') + (params.message ? params.message : '');
+
+		translator.translate(message, function(html) {
 			var bar = $.snackbar({
 				content: html,
 				timeout: 3000,

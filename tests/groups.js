@@ -139,6 +139,16 @@ describe('Groups', function() {
 				done();
 			});
 		});
+
+		it('should check if group exists using an array', function(done) {
+			Groups.exists(['Test', 'Derp'], function(err, groupsExists) {
+				if (err) return done(err);
+
+				assert.strictEqual(groupsExists[0], true);
+				assert.strictEqual(groupsExists[1], false);
+				done();
+			});
+		});
 	});
 
 	describe('.create()', function() {
@@ -290,6 +300,34 @@ describe('Groups', function() {
 				}, function(result) {
 					assert(result);
 
+					done();
+				});
+			});
+		});
+	});
+
+	describe('.show()', function() {
+		it('should make a group visible', function(done) {
+			Groups.show('Test', function(err) {
+				assert.ifError(err);
+				assert.equal(arguments.length, 1);
+				db.isSortedSetMember('groups:visible:createtime', 'Test', function(err, isMember) {
+					assert.ifError(err);
+					assert.strictEqual(isMember, true);
+					done();
+				});
+			});
+		});
+	});
+
+	describe('.hide()', function() {
+		it('should make a group hidden', function(done) {
+			Groups.hide('Test', function(err) {
+				assert.ifError(err);
+				assert.equal(arguments.length, 1);
+				db.isSortedSetMember('groups:visible:createtime', 'Test', function(err, isMember) {
+					assert.ifError(err);
+					assert.strictEqual(isMember, false);
 					done();
 				});
 			});

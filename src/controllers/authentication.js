@@ -5,6 +5,7 @@ var async = require('async'),
 	passport = require('passport'),
 	nconf = require('nconf'),
 	validator = require('validator'),
+	_ = require('underscore'),
 
 	db = require('../database'),
 	meta = require('../meta'),
@@ -30,7 +31,6 @@ authenticationController.register = function(req, res, next) {
 		}
 	}
 
-	var uid;
 	async.waterfall([
 		function(next) {
 			if (registrationType === 'invite-only') {
@@ -52,11 +52,7 @@ authenticationController.register = function(req, res, next) {
 				return next(new Error('[[error:username-too-long'));
 			}
 
-			if (!userData.password || userData.password.length < meta.config.minimumPasswordLength) {
-				return next(new Error('[[user:change_password_error_length]]'));
-			}
-
-			next();
+			user.isPasswordValid(userData.password, next);
 		},
 		function(next) {
 			plugins.fireHook('filter:register.check', {req: req, res: res, userData: userData}, next);
@@ -71,6 +67,10 @@ authenticationController.register = function(req, res, next) {
 	], function(err, data) {
 		if (err) {
 			return res.status(400).send(err.message);
+		}
+
+		if (req.body.userLang) {
+			user.setSetting(data.uid, 'userLang', req.body.userLang);
 		}
 
 		res.json(data);
@@ -156,7 +156,7 @@ function continueLogin(req, res, next) {
 
 		// Alter user cookie depending on passed-in option
 		if (req.body.remember === 'on') {
-			var duration = 1000*60*60*24*parseInt(meta.config.loginDays || 14, 10);
+			var duration = 1000 * 60 * 60 * 24 * (parseInt(meta.config.loginDays, 10) || 14);
 			req.session.cookie.maxAge = duration;
 			req.session.cookie.expires = new Date(Date.now() + duration);
 		} else {
@@ -177,8 +177,27 @@ function continueLogin(req, res, next) {
 				if (err) {
 					return res.status(403).send(err.message);
 				}
+
 				if (userData.uid) {
+					var uuid = utils.generateUUID();
+					req.session.meta = {};
+
+					// Associate IP used during login with user account
 					user.logIP(userData.uid, req.ip);
+					req.session.meta.ip = req.ip;
+
+					// Associate metadata retrieved via user-agent
+					req.session.meta = _.extend(req.session.meta, {
+						uuid: uuid,
+						datetime: Date.now(),
+						platform: req.useragent.platform,
+						browser: req.useragent.browser,
+						version: req.useragent.version
+					});
+
+					// Associate login session with user
+					user.auth.addSession(userData.uid, req.sessionID);
+					db.setObjectField('uid:' + userData.uid + 'sessionUUID:sessionId', uuid, req.sessionID);
 
 					plugins.fireHook('action:user.loggedIn', userData.uid);
 				}
@@ -255,8 +274,7 @@ authenticationController.localLogin = function(req, username, password, next) {
 authenticationController.logout = function(req, res, next) {
 	if (req.user && parseInt(req.user.uid, 10) > 0 && req.sessionID) {
 		var uid = parseInt(req.user.uid, 10);
-		require('../socket.io').logoutUser(req.user.uid);
-		db.sessionStore.destroy(req.sessionID, function(err) {
+		user.auth.revokeSession(req.sessionID, uid, function(err) {
 			if (err) {
 				return next(err);
 			}

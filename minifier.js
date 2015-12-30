@@ -4,9 +4,10 @@ var uglifyjs = require('uglify-js'),
 	less = require('less'),
 	async = require('async'),
 	fs = require('fs'),
+	file = require('./src/file'),
 	crypto = require('crypto'),
 	utils = require('./public/src/utils'),
- 
+
 	Minifier = {
 		js: {}
 	};
@@ -14,16 +15,16 @@ var uglifyjs = require('uglify-js'),
 /* Javascript */
 Minifier.js.minify = function (scripts, minify, callback) {
 	scripts = scripts.filter(function(file) {
-		return fs.existsSync(file) && file.endsWith('.js');
+		return file && file.endsWith('.js');
 	});
 
-	if (minify) {
-		minifyScripts(scripts, function() {
-			callback.apply(this, arguments);
-		});
-	} else {
-		concatenateScripts(scripts, callback);
-	}
+	async.filter(scripts, file.exists, function(scripts) {
+		if (minify) {
+			minifyScripts(scripts, callback);
+		} else {
+			concatenateScripts(scripts, callback);
+		}
+	});
 };
 
 process.on('message', function(payload) {
@@ -47,17 +48,7 @@ function minifyScripts(scripts, callback) {
 		var minified = uglifyjs.minify(scripts, {
 				// outSourceMap: "nodebb.min.js.map",
 				compress: false
-			}),
-			hasher = crypto.createHash('md5'),
-			hash;
-
-		// Calculate js hash
-		hasher.update(minified.code, 'utf-8');
-		hash = hasher.digest('hex');
-		process.send({
-			type: 'hash',
-			payload: hash.slice(0, 8)
-		});
+			});
 
 		callback(minified.code/*, minified.map*/);
 	} catch(err) {
@@ -75,6 +66,7 @@ function concatenateScripts(scripts, callback) {
 				type: 'error',
 				payload: err
 			});
+			return;
 		}
 
 		scripts = scripts.join(require('os').EOL + ';');

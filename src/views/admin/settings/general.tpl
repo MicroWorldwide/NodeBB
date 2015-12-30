@@ -22,11 +22,17 @@
 				If no browser title is specified, the site title will be used
 			</p>
 
+			<label>Title Layout</label>
+			<input class="form-control" type="text" placeholder="Title Layout" data-field="titleLayout" />
+			<p class="help-block">
+				Define how the browser title will be structured ie. &#123;pageTitle&#125; | &#123;browserTitle&#125;
+			</p>
+
 			<label>Site Description</label>
 			<input type="text" class="form-control" placeholder="A short description about your community" data-field="description" /><br />
 
 			<label>Site Keywords</label>
-			<input type="text" class="form-control" placeholder="Keywords describing your community, comma-seperated" data-field="keywords" /><br />
+			<input type="text" class="form-control" placeholder="Keywords describing your community, comma-separated" data-field="keywords" /><br />
 		</form>
 	</div>
 </div>
@@ -40,6 +46,7 @@
 				<input id="logoUrl" type="text" class="form-control" placeholder="Path to a logo to display on forum header" data-field="brand:logo" data-action="upload" data-target="logoUrl" data-route="{config.relative_path}/api/admin/uploadlogo" readonly />
 				<span class="input-group-btn">
 					<input data-action="upload" data-target="logoUrl" data-route="{config.relative_path}/api/admin/uploadlogo" type="button" class="btn btn-default" value="Upload"></input>
+					<button data-action="removeLogo" type="button" class="btn btn-default btn-danger"><i class="fa fa-times"></i></button>
 				</span>
 			</div>
 		</div>
@@ -66,9 +73,30 @@
 			<div class="input-group">
 				<input id="faviconUrl" type="text" class="form-control" placeholder="favicon.ico" data-field="brand:favicon" data-action="upload" data-target="faviconUrl" data-route="{config.relative_path}/api/admin/uploadfavicon" readonly />
 				<span class="input-group-btn">
-					<input data-action="upload" data-target="faviconUrl" data-route="{config.relative_path}/api/admin/uploadfavicon" type="button" class="btn btn-default" value="Upload"></input>
+					<input data-action="upload" data-target="faviconUrl" data-route="{config.relative_path}/api/admin/uploadfavicon" data-help="0" type="button" class="btn btn-default" value="Upload"></input>
+					<button data-action="removeFavicon" type="button" class="btn btn-default btn-danger"><i class="fa fa-times"></i></button>
 				</span>
 			</div>
+		</div>
+	</div>
+</div>
+
+<div class="row">
+	<div class="col-sm-2 col-xs-12 settings-header">
+		Homescreen/Touch Icon
+	</div>
+	<div class="col-sm-10 col-xs-12">
+		<div class="form-group">
+			<div class="input-group">
+				<input id="touchIconUrl" type="text" class="form-control" data-field="brand:touchIcon" data-action="upload" data-target="touchIconUrl" data-route="{config.relative_path}/api/admin/uploadTouchIcon" readonly />
+				<span class="input-group-btn">
+					<input data-action="upload" data-target="touchIconUrl" data-route="{config.relative_path}/api/admin/uploadTouchIcon" type="button" class="btn btn-default" value="Upload"></input>
+					<button data-action="removeTouchIcon" type="button" class="btn btn-default btn-danger"><i class="fa fa-times"></i></button>
+				</span>
+			</div>
+			<p class="help-block">
+				Recommended size and format: 192x192, PNG format only. If no touch icon is specified, NodeBB will fall back to using the favicon.
+			</p>
 		</div>
 	</div>
 </div>
@@ -89,12 +117,7 @@
 					<span class="mdl-switch__label"><strong>Disable social buttons</strong></span>
 				</label>
 			</div>
-			<div class="checkbox">
-				<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
-					<input type="checkbox" class="mdl-switch__input" id="showSiteTitle" data-field="disableChat">
-					<span class="mdl-switch__label"><strong>Disable chat</strong></span>
-				</label>
-			</div>
+
 		</form>
 	</div>
 </div>

@@ -92,16 +92,6 @@ define('admin/settings', ['uploader', 'sounds'], function(uploader, sounds) {
 
 		handleUploads();
 
-		$('button[data-action="email.test"]').off('click').on('click', function() {
-			socket.emit('admin.email.test', function(err) {
-				if (err) {
-					return app.alertError(err.message);
-				}
-				app.alertSuccess('Test Email Sent');
-			});
-			return false;
-		});
-
 		$('#clear-sitemap-cache').off('click').on('click', function() {
 			socket.emit('admin.settings.clearSitemapCache', function() {
 				app.alertSuccess('Sitemap Cache Cleared!');
@@ -120,11 +110,14 @@ define('admin/settings', ['uploader', 'sounds'], function(uploader, sounds) {
 		$('#content input[data-action="upload"]').each(function() {
 			var uploadBtn = $(this);
 			uploadBtn.on('click', function() {
-				uploader.open(uploadBtn.attr('data-route'), {}, 0, function(image) {
+				uploader.show({
+					route: uploadBtn.attr('data-route'),
+					params: {},
+					fileSize: 0,
+					showHelp: uploadBtn.attr('data-help') ? uploadBtn.attr('data-help') === 1 : undefined
+				}, function(image) {
 					$('#' + uploadBtn.attr('data-target')).val(image);
 				});
-
-				uploader.hideAlerts();
 			});
 		});
 	}

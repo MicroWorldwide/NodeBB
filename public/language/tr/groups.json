@@ -1,5 +1,5 @@
 {
-    "groups": "Guruplar",
+    "groups": "Gruplar",
     "view_group": "Grubu Gör",
     "owner": "Grup Kurucusu",
     "new_group": "Yeni Grup Oluştur",
@@ -12,8 +12,9 @@
     "invited.none": "Şu anda davet edilmiş üye yok",
     "invited.uninvite": "Daveti iptal et",
     "invited.search": "Gruba davet etmek için kullanıcı ara",
-    "cover-instructions": "Bir fotoğrafı Sürükleyin ve Bırakın, uygun yere sürükleyip <strong>Kaydet</strong>'e tıklayın.",
-    "cover-change": "Değiştir",
+    "invited.notification_title": "<strong>%1</strong> grubuna katılmaya davet edildiniz",
+    "request.notification_title": "<strong>%1</strong> grup daveti gönderdi",
+    "request.notification_text": "<strong>%1</strong> <strong>%2</strong> grubuna katılmak istiyor",
     "cover-save": "Kaydet",
     "cover-saving": "Kaydediliyor",
     "details.title": "Grup Detayları",

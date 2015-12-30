@@ -1,19 +1,18 @@
 "use strict";
 
-var uploadsController = {},
+var fs = require('fs');
+var path = require('path');
+var async = require('async');
+var nconf = require('nconf');
+var validator = require('validator');
+var winston = require('winston');
 
-	fs = require('fs'),
-	path = require('path'),
-	async = require('async'),
-	nconf = require('nconf'),
-	validator = require('validator'),
+var meta = require('../meta');
+var file = require('../file');
+var plugins = require('../plugins');
+var image = require('../image');
 
-	meta = require('../meta'),
-	file = require('../file'),
-	plugins = require('../plugins'),
-	utils = require('../../public/src/utils'),
-	image = require('../image');
-
+var uploadsController = {};
 
 uploadsController.upload = function(req, res, filesIterator, next) {
 	var files = req.files.files;
@@ -46,17 +45,17 @@ uploadsController.upload = function(req, res, filesIterator, next) {
 
 uploadsController.uploadPost = function(req, res, next) {
 	uploadsController.upload(req, res, function(uploadedFile, next) {
-		file.isFileTypeAllowed(uploadedFile.path, file.allowedExtensions(), function(err) {
-			if (err) {
-				return next(err);
-			}
+		if (uploadedFile.type.match(/image./)) {
+			file.isFileTypeAllowed(uploadedFile.path, function(err) {
+				if (err) {
+					return next(err);
+				}
 
-			if (uploadedFile.type.match(/image./)) {
 				uploadImage(req.user.uid, uploadedFile, next);
-			} else {
-				uploadFile(req.user.uid, uploadedFile, next);
-			}
-		});
+			});
+		} else {
+			uploadFile(req.user.uid, uploadedFile, next);
+		}
 	}, next);
 };
 
@@ -67,14 +66,19 @@ uploadsController.uploadThumb = function(req, res, next) {
 	}
 
 	uploadsController.upload(req, res, function(uploadedFile, next) {
-		file.isFileTypeAllowed(uploadedFile.path, file.allowedExtensions(), function(err) {
+		file.isFileTypeAllowed(uploadedFile.path, function(err) {
 			if (err) {
 				return next(err);
 			}
 
 			if (uploadedFile.type.match(/image./)) {
 				var size = meta.config.topicThumbSize || 120;
-				image.resizeImage(uploadedFile.path, path.extname(uploadedFile.name), size, size, function(err) {
+				image.resizeImage({
+					path: uploadedFile.path,
+					extension: path.extname(uploadedFile.name),
+					width: size,
+					height: size
+				}, function(err) {
 					if (err) {
 						return next(err);
 					}
@@ -88,7 +92,7 @@ uploadsController.uploadThumb = function(req, res, next) {
 };
 
 uploadsController.uploadGroupCover = function(data, next) {
-	uploadImage(0/*req.user.uid*/, data, next);
+	uploadImage(0, data, next);
 };
 
 function uploadImage(uid, image, callback) {
@@ -120,6 +124,14 @@ function uploadFile(uid, uploadedFile, callback) {
 		return callback(new Error('[[error:file-too-big, ' + meta.config.maximumFileSize + ']]'));
 	}
 
+	if (meta.config.hasOwnProperty('allowedFileExtensions')) {
+		var allowed = file.allowedExtensions();
+		var extension = path.extname(uploadedFile.name);
+		if (allowed.length > 0 && allowed.indexOf(extension) === -1) {
+			return callback(new Error('[[error:invalid-file-type, ' + allowed.join('&#44; ') + ']]'));
+		}
+	}
+
 	var filename = uploadedFile.name || 'upload';
 
 	filename = Date.now() + '-' + validator.escape(filename).substr(0, 255);
@@ -136,9 +148,14 @@ function uploadFile(uid, uploadedFile, callback) {
 }
 
 function deleteTempFiles(files) {
-	for(var i=0; i<files.length; ++i) {
-		fs.unlink(files[i].path);
-	}
+	async.each(files, function(file, next) {
+		fs.unlink(file.path, function(err) {
+			if (err) {
+				winston.error(err);
+			}
+			next();
+		});
+	});
 }
 
 

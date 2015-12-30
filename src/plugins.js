@@ -14,6 +14,7 @@ var fs = require('fs'),
 	translator = require('../public/src/modules/translator'),
 	utils = require('../public/src/utils'),
 	hotswap = require('./hotswap'),
+	file = require('./file'),
 
 	controllers = require('./controllers'),
 	app, middleware;
@@ -103,7 +104,7 @@ var fs = require('fs'),
 					return path.join(__dirname, '../node_modules/', plugin);
 				});
 
-				async.filter(plugins, fs.exists, function(plugins){
+				async.filter(plugins, file.exists, function(plugins) {
 					async.eachSeries(plugins, Plugins.loadPlugin, next);
 				});
 			},
@@ -206,11 +207,8 @@ var fs = require('fs'),
 		require('request')(url, {
 			json: true
 		}, function(err, res, body) {
-			var plugins = [];
-
 			if (err) {
 				winston.error('Error parsing plugins : ' + err.message);
-				plugins = [];
 			}
 
 			Plugins.normalise(body, callback);
@@ -218,9 +216,9 @@ var fs = require('fs'),
 	};
 
 	Plugins.normalise = function(apiReturn, callback) {
-		var pluginMap = {},
-			dependencies = require.main.require('./package.json').dependencies;
-
+		var pluginMap = {};
+		var dependencies = require.main.require('./package.json').dependencies;
+		apiReturn = apiReturn || [];
 		for(var i=0; i<apiReturn.length; ++i) {
 			apiReturn[i].id = apiReturn[i].name;
 			apiReturn[i].installed = false;

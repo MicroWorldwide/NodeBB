@@ -2,26 +2,26 @@
 
 var meta = require('../meta'),
 	db = require('../database'),
+	file = require('../file'),
 	auth = require('../routes/authentication'),
 
 	path = require('path'),
-	fs = require('fs'),
 	nconf = require('nconf'),
-	winston = require('winston'),
 	flash = require('connect-flash'),
 	templates = require('templates.js'),
 	bodyParser = require('body-parser'),
 	cookieParser = require('cookie-parser'),
 	compression = require('compression'),
 	favicon = require('serve-favicon'),
-	session = require('express-session');
+	session = require('express-session'),
+	useragent = require('express-useragent');
 
 
 var middleware = {};
 
 function setupFavicon(app) {
 	var faviconPath = path.join(__dirname, '../../', 'public', meta.config['brand:favicon'] ? meta.config['brand:favicon'] : 'favicon.ico');
-	if (fs.existsSync(faviconPath)) {
+	if (file.existsSync(faviconPath)) {
 		app.use(nconf.get('relative_path'), favicon(faviconPath));
 	}
 }
@@ -48,9 +48,10 @@ module.exports = function(app) {
 	app.use(bodyParser.urlencoded({extended: true}));
 	app.use(bodyParser.json());
 	app.use(cookieParser());
+	app.use(useragent.express());
 
 	var cookie = {
-		maxAge: 1000 * 60 * 60 * 24 * parseInt(meta.config.loginDays || 14, 10)
+		maxAge: 1000 * 60 * 60 * 24 * (parseInt(meta.config.loginDays, 10) || 14)
 	};
 
 	if (meta.config.cookieDomain) {

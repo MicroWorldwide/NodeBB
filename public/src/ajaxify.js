@@ -46,7 +46,7 @@ $(document).ready(function() {
 			return true;
 		}
 
-		app.enterRoom('');
+		app.leaveCurrentRoom();
 
 		$(window).off('scroll');
 
@@ -56,6 +56,7 @@ $(document).ready(function() {
 
 		url = ajaxify.start(url, quiet);
 
+		$('body').removeClass(ajaxify.data.bodyClass);
 		$('#footer, #content').removeClass('hide').addClass('ajaxifying');
 
 		ajaxify.loadData(url, function(err, data) {
@@ -110,20 +111,21 @@ $(document).ready(function() {
 			textStatus = err.textStatus;
 
 		if (data) {
-			data.responseJSON.config = config;
 			var status = parseInt(data.status, 10);
 			if (status === 403 || status === 404 || status === 500 || status === 502 || status === 503) {
 				if (status === 502) {
 					status = 500;
 				}
-
+				if (data.responseJSON) {
+					data.responseJSON.config = config;
+				}
 				$('#footer, #content').removeClass('hide').addClass('ajaxifying');
 				return renderTemplate(url, status.toString(), data.responseJSON, callback);
 			} else if (status === 401) {
 				app.alertError('[[global:please_log_in]]');
 				app.previousUrl = url;
 				return ajaxify.go('login');
-			} else if (status === 302) {
+			} else if (status === 302 || status === 308) {
 				if (data.responseJSON.external) {
 					window.location.href = data.responseJSON.external;
 				} else if (typeof data.responseJSON === 'string') {
@@ -140,6 +142,7 @@ $(document).ready(function() {
 
 		templates.parse(tpl_url, data, function(template) {
 			translator.translate(template, function(translatedTemplate) {
+				$('body').addClass(data.bodyClass);
 				$('#content').html(translatedTemplate);
 
 				ajaxify.end(url, tpl_url);
@@ -181,12 +184,12 @@ $(document).ready(function() {
 		return url;
 	};
 
-	ajaxify.refresh = function(e) {
+	ajaxify.refresh = function(e, callback) {
 		if (e && e instanceof jQuery.Event) {
 			e.preventDefault();
 		}
 
-		ajaxify.go(ajaxify.currentPage, null, true);
+		ajaxify.go(ajaxify.currentPage, callback, true);
 	};
 
 	ajaxify.loadScript = function(tpl_url, callback) {
@@ -221,9 +224,7 @@ $(document).ready(function() {
 
 				$(window).trigger('action:ajaxify.dataLoaded', {url: url, data: data});
 
-				if (callback) {
-					callback(null, data);
-				}
+				callback(null, data);
 			},
 			error: function(data, textStatus) {
 				if (data.status === 0 && textStatus === 'error') {
@@ -306,6 +307,9 @@ $(document).ready(function() {
 	}
 
 	app.load();
-	templates.cache['500'] = $('.tpl-500').html();
+
+	$('[data-template]').each(function() {
+		templates.cache[$(this).attr('data-template')] = $(this).html();
+	});
 
 });

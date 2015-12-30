@@ -14,9 +14,11 @@
 	"invited.none": "There are no invited members at this time",
 	"invited.uninvite": "Rescind Invitation",
 	"invited.search": "Search for a user to invite to this group",
+	"invited.notification_title": "You have been invited to join <strong>%1</strong>",
 
-	"cover-instructions": "Drag and Drop a photo, drag to position, and hit <strong>Save</strong>",
-	"cover-change": "Change",
+	"request.notification_title": "Group Membership Request from <strong>%1</strong>",
+	"request.notification_text": "<strong>%1</strong> has requested to become a member of <strong>%2</strong>",
+
 	"cover-save": "Save",
 	"cover-saving": "Saving",
 
@@ -27,6 +29,7 @@
 	"details.has_no_posts": "This group's members have not made any posts.",
 	"details.latest_posts": "Latest Posts",
 	"details.private": "Private",
+	"details.disableJoinRequests": "Disable join requests",
 	"details.grant": "Grant/Rescind Ownership",
 	"details.kick": "Kick",
 

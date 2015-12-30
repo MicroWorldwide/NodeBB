@@ -39,7 +39,7 @@ helpers.notAllowed = function(req, res, error) {
 
 helpers.redirect = function(res, url) {
 	if (res.locals.isAPI) {
-		res.status(302).json(url);
+		res.status(308).json(url);
 	} else {
 		res.redirect(nconf.get('relative_path') + url);
 	}
@@ -98,6 +98,15 @@ helpers.buildBreadcrumbs = function(crumbs) {
 	});
 
 	return breadcrumbs;
+};
+
+helpers.buildTitle = function(pageTitle) {
+	var titleLayout = meta.config.titleLayout || '{pageTitle} | {browserTitle}';
+
+	var browserTitle = validator.escape(meta.config.browserTitle || meta.config.title || 'NodeBB');
+	pageTitle = pageTitle || '';
+	var title = titleLayout.replace('{pageTitle}', pageTitle).replace('{browserTitle}', browserTitle);
+	return title;
 };
 
 module.exports = helpers;

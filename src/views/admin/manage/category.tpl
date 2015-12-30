@@ -90,11 +90,11 @@
 								<div class="form-group text-center">
 									<label for="cid-{category.cid}-parentCid">Parent Category</label>
 									<br/>
-									<div class="btn-group <!-- IF !category.parent.name -->hide<!-- ENDIF !category.parent.name-->">
+									<div class="btn-group <!-- IF !category.parent.name -->hide<!-- ENDIF !category.parent.name -->">
 										<button type="button" class="btn btn-default" data-action="changeParent" data-parentCid="{category.parent.cid}"><i class="fa {category.parent.icon}"></i> {category.parent.name}</button>
 										<button type="button" class="btn btn-warning" data-action="removeParent" data-parentCid="{category.parent.cid}"><i class="fa fa-times"></i></button>
 									</div>
-									<button type="button" class="btn btn-default btn-block <!-- IF category.parent.name -->hide<!-- ENDIF category.parent.name-->" data-action="setParent"><i class="fa fa-sitemap"></i> (None)</button>
+									<button type="button" class="btn btn-default btn-block <!-- IF category.parent.name -->hide<!-- ENDIF category.parent.name -->" data-action="setParent"><i class="fa fa-sitemap"></i> (None)</button>
 								</div>
 							</fieldset>
 
@@ -106,21 +106,17 @@
 			</div>
 
 			<div class="tab-pane fade col-xs-12" id="privileges">
-				<div class="panel panel-default">
-					<div class="panel-body">
-						<p>
-							You can configure the access control privileges for this category in this section. Privileges can be granted on a per-user or
-							a per-group basis. You can add a new user to this table by searching for them in the form below.
-						</p>
-						<p class="text-warning">
-							<strong>Note</strong>: Privilege settings take effect immediately. It is not necessary to save the category after adjusting
-							these settings.
-						</p>
-						<hr />
-						<div class="privilege-table-container">
-							<!-- IMPORT admin/partials/categories/privileges.tpl -->
-						</div>
-					</div>
+				<p>
+					You can configure the access control privileges for this category in this section. Privileges can be granted on a per-user or
+					a per-group basis. You can add a new user to this table by searching for them in the form below.
+				</p>
+				<p class="text-warning">
+					<strong>Note</strong>: Privilege settings take effect immediately. It is not necessary to save the category after adjusting
+					these settings.
+				</p>
+				<hr />
+				<div class="privilege-table-container">
+					<!-- IMPORT admin/partials/categories/privileges.tpl -->
 				</div>
 			</div>
 		</div>

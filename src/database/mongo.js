@@ -124,7 +124,7 @@
 			require('./mongo/sorted')(db, module);
 			require('./mongo/list')(db, module);
 
-			if(nconf.get('mongo:password') && nconf.get('mongo:username')) {
+			if (nconf.get('mongo:password') && nconf.get('mongo:username')) {
 				db.authenticate(nconf.get('mongo:username'), nconf.get('mongo:password'), function (err) {
 					if (err) {
 						winston.error(err.stack);
@@ -138,30 +138,21 @@
 			}
 
 			function createIndices() {
-				winston.info('[database] Checking database indices.')
+				winston.info('[database] Checking database indices.');
 				async.parallel([
 					async.apply(createIndex, 'objects', {_key: 1, score: -1}, {background: true}),
 					async.apply(createIndex, 'objects', {_key: 1, value: -1}, {background: true, unique: true, sparse: true}),
-
-					async.apply(createIndex, 'objects', {expireAt: 1}, {expireAfterSeconds: 0, background: true}),
-
-					async.apply(createIndex, 'searchtopic', {content: 'text', uid: 1, cid: 1}, {background: true}),
-					async.apply(createIndex, 'searchtopic', {id: 1}, {background: true}),
-
-					async.apply(createIndex, 'searchpost', {content: 'text', uid: 1, cid: 1}, {background: true}),
-					async.apply(createIndex, 'searchpost', {id: 1}, {background: true})
+					async.apply(createIndex, 'objects', {expireAt: 1}, {expireAfterSeconds: 0, background: true})
 				], function(err) {
-					callback(err);
-				});
-			}
-
-			function createIndex(collection, index, options, callback) {
-				db.collection(collection).ensureIndex(index, options, function(err) {
 					if (err) {
 						winston.error('Error creating index ' + err.message);
 					}
 					callback(err);
 				});
+			}
+
+			function createIndex(collection, index, options, callback) {
+				db.collection(collection).ensureIndex(index, options, callback);
 			}
 		});
 	};
@@ -178,25 +169,55 @@
 
 	module.info = function(db, callback) {
 		async.parallel({
-			serverStats: function(next) {
+			serverStatus: function(next) {
 				db.command({'serverStatus': 1}, next);
 			},
 			stats: function(next) {
-				db.stats({scale:1024}, next);
+				db.command({'dbStats': 1}, next);
+			},
+			listCollections: function(next) {
+				db.listCollections().toArray(function(err, items) {
+					if (err) {
+						return next(err);
+					}
+					async.map(items, function(collection, next) {
+						db.collection(collection.name).stats(next);
+					}, next);
+				});
 			}
 		}, function(err, results) {
 			if (err) {
 				return callback(err);
 			}
 			var stats = results.stats;
+			var scale = 1024 * 1024;
 
-			stats.avgObjSize = (stats.avgObjSize / 1024).toFixed(2);
-			stats.dataSize = (stats.dataSize / 1024).toFixed(2);
-			stats.storageSize = (stats.storageSize / 1024).toFixed(2);
-			stats.fileSize = (stats.fileSize / 1024).toFixed(2);
-			stats.indexSize = (stats.indexSize / 1024).toFixed(2);
-			stats.mem = results.serverStats.mem;
+			results.listCollections = results.listCollections.map(function(collectionInfo) {
+				return {
+					name: collectionInfo.ns,
+					count: collectionInfo.count,
+					size: collectionInfo.size,
+					avgObjSize: collectionInfo.avgObjSize,
+					storageSize: collectionInfo.storageSize,
+					totalIndexSize: collectionInfo.totalIndexSize,
+					indexSizes: collectionInfo.indexSizes
+				};
+			});
+
+			stats.mem = results.serverStatus.mem;
+			stats.collectionData = results.listCollections;
+			stats.network = results.serverStatus.network;
 			stats.raw = JSON.stringify(stats, null, 4);
+
+			stats.avgObjSize = stats.avgObjSize.toFixed(2);
+			stats.dataSize = (stats.dataSize / scale).toFixed(2);
+			stats.storageSize = (stats.storageSize / scale).toFixed(2);
+			stats.fileSize = stats.fileSize ? (stats.fileSize / scale).toFixed(2) : 0;
+			stats.indexSize = (stats.indexSize / scale).toFixed(2);
+			stats.storageEngine = results.serverStatus.storageEngine ? results.serverStatus.storageEngine.name : 'mmapv1';
+			stats.host = results.serverStatus.host;
+			stats.version = results.serverStatus.version;
+			stats.uptime = results.serverStatus.uptime;
 			stats.mongo = true;
 
 			callback(null, stats);

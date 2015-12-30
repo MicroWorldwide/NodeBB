@@ -2,11 +2,12 @@
 
 var async = require('async'),
 	nconf = require('nconf'),
-	db = require('../database'),
+	validator = require('validator'),
 	meta = require('../meta'),
 	groups = require('../groups'),
 	user = require('../user'),
 	helpers = require('./helpers'),
+	plugins = require('../plugins'),
 	groupsController = {};
 
 groupsController.list = function(req, res, next) {
@@ -17,6 +18,7 @@ groupsController.list = function(req, res, next) {
 			return next(err);
 		}
 		data.title = '[[pages:groups]]';
+		data.breadcrumbs = helpers.buildBreadcrumbs([{text: '[[pages:groups]]'}]);
 		res.render('groups/list', data);
 	});
 };
@@ -45,14 +47,14 @@ groupsController.getGroupsFromSet = function(uid, sort, start, stop, callback) {
 groupsController.details = function(req, res, callback) {
 	async.waterfall([
 		async.apply(groups.exists, res.locals.groupName),
-		function(exists, next) {
+		function (exists, next) {
 			if (!exists) {
 				return callback();
 			}
 
 			groups.isHidden(res.locals.groupName, next);
 		},
-		function(hidden, next) {
+		function (hidden, next) {
 			if (!hidden) {
 				return next();
 			}
@@ -66,41 +68,47 @@ groupsController.details = function(req, res, callback) {
 				}
 				callback();
 			});
+		},
+		function (next) {
+			async.parallel({
+				group: function(next) {
+					groups.get(res.locals.groupName, {
+						uid: req.uid,
+						truncateUserList: true,
+						userListCount: 20
+					}, next);
+				},
+				posts: function(next) {
+					groups.getLatestMemberPosts(res.locals.groupName, 10, req.uid, next);
+				},
+				isAdmin: async.apply(user.isAdministrator, req.uid)
+			}, next);
+		},
+		function (results, next) {
+			if (!results.group) {
+				return callback();
+			}
+			results.title = '[[pages:group, ' + results.group.displayName + ']]';
+			results.breadcrumbs = helpers.buildBreadcrumbs([{text: '[[pages:groups]]', url: '/groups' }, {text: results.group.displayName}]);
+			plugins.fireHook('filter:group.build', {req: req, res: res, templateData: results}, next);
 		}
-	], function(err) {
+	], function(err, results) {
 		if (err) {
 			return callback(err);
 		}
 
-		async.parallel({
-			group: function(next) {
-				groups.get(res.locals.groupName, {
-					uid: req.uid,
-					truncateUserList: true,
-					userListCount: 20
-				}, next);
-			},
-			posts: function(next) {
-				groups.getLatestMemberPosts(res.locals.groupName, 10, req.uid, next);
-			},
-			isAdmin: async.apply(user.isAdministrator, req.uid)
-		}, function(err, results) {
-			if (err || !results.group) {
-				return callback(err);
-			}
-
-			results.title = '[[pages:group, ' + results.group.displayName + ']]';
-			res.render('groups/details', results);
-		});
+		res.render('groups/details', results.templateData);
 	});
 };
 
 groupsController.members = function(req, res, next) {
+	var groupName;
 	async.waterfall([
 		function(next) {
 			groups.getGroupNameByGroupSlug(req.params.slug, next);
 		},
-		function(groupName, next) {
+		function(_groupName, next) {
+			groupName = _groupName;
 			user.getUsersFromSet('group:' + groupName + ':members', req.uid, 0, 49, next);
 		},
 	], function(err, users) {
@@ -108,11 +116,33 @@ groupsController.members = function(req, res, next) {
 			return next(err);
 		}
 
+		var breadcrumbs = helpers.buildBreadcrumbs([
+			{text: '[[pages:groups]]', url: '/groups' },
+			{text: validator.escape(groupName), url: '/groups/' + req.params.slug},
+			{text: '[[groups:details.members]]'}
+		]);
+
 		res.render('groups/members', {
 			users: users,
 			nextStart: 50,
 			loadmore_display: users.length > 50 ? 'block' : 'hide',
+			breadcrumbs: breadcrumbs
 		});
+	});
+};
+
+groupsController.uploadCover = function(req, res, next) {
+	var params = JSON.parse(req.body.params);
+	
+	groups.updateCover({
+		file: req.files.files[0].path,
+		groupName: params.groupName
+	}, function(err, image) {
+		if (err) {
+			return next(err);
+		}
+
+		res.json([{url: image.url.startsWith('http') ? image.url : nconf.get('relative_path') + image.url}]);
 	});
 };
 

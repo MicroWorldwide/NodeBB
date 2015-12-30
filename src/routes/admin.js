@@ -13,8 +13,9 @@ function apiRoutes(router, middleware, controllers) {
 
 	router.post('/category/uploadpicture', middlewares, controllers.admin.uploads.uploadCategoryPicture);
 	router.post('/uploadfavicon', middlewares, controllers.admin.uploads.uploadFavicon);
+	router.post('/uploadTouchIcon', middlewares, controllers.admin.uploads.uploadTouchIcon);
 	router.post('/uploadlogo', middlewares, controllers.admin.uploads.uploadLogo);
-	router.post('/uploadgravatardefault', middlewares, controllers.admin.uploads.uploadGravatarDefault);
+	router.post('/uploadDefaultAvatar', middlewares, controllers.admin.uploads.uploadDefaultAvatar);
 }
 
 function adminRouter(middleware, controllers) {
@@ -40,8 +41,8 @@ function apiRouter(middleware, controllers) {
 function addRoutes(router, middleware, controllers) {
 	var middlewares = [middleware.pluginHooks];
 
-	router.get('/', middlewares, controllers.admin.home);
-	router.get('/general/dashboard', middlewares, controllers.admin.home);
+	router.get('/', middlewares, controllers.admin.dashboard.get);
+	router.get('/general/dashboard', middlewares, controllers.admin.dashboard.get);
 	router.get('/general/languages', middlewares, controllers.admin.languages.get);
 	router.get('/general/sounds', middlewares, controllers.admin.sounds.get);
 	router.get('/general/navigation', middlewares, controllers.admin.navigation.get);
@@ -70,8 +71,8 @@ function addRoutes(router, middleware, controllers) {
 	router.get('/appearance/:term?', middlewares, controllers.admin.appearance.get);
 
 	router.get('/extend/plugins', middlewares, controllers.admin.plugins.get);
-	router.get('/extend/widgets', middlewares, controllers.admin.extend.widgets);
-	router.get('/extend/rewards', middlewares, controllers.admin.extend.rewards);
+	router.get('/extend/widgets', middlewares, controllers.admin.extend.widgets.get);
+	router.get('/extend/rewards', middlewares, controllers.admin.extend.rewards.get);
 
 	router.get('/advanced/database', middlewares, controllers.admin.database.get);
 	router.get('/advanced/events', middlewares, controllers.admin.events.get);
@@ -79,6 +80,7 @@ function addRoutes(router, middleware, controllers) {
 	router.get('/advanced/post-cache', middlewares, controllers.admin.postCache.get);
 
 	router.get('/development/logger', middlewares, controllers.admin.logger.get);
+	router.get('/development/info', middlewares, controllers.admin.info.get);
 }
 
 module.exports = function(app, middleware, controllers) {

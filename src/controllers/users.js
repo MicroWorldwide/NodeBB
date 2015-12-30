@@ -14,10 +14,6 @@ var async = require('async'),
 	db = require('../database'),
 	helpers = require('./helpers');
 
-usersController.redirectToOnlineUsers = function(req, res, next) {
-	helpers.redirect(res, '/users/online');
-};
-
 usersController.getOnlineUsers = function(req, res, next) {
 	var	websockets = require('../socket.io');
 
@@ -49,8 +45,8 @@ usersController.getOnlineUsers = function(req, res, next) {
 			loadmore_display: results.count > 50 ? 'block' : 'hide',
 			users: results.users,
 			anonymousUserCount: websockets.getOnlineAnonCount(),
-			defaultGravatar: user.createGravatarURLFromEmail(''),
-			title: '[[pages:users/online]]'
+			title: '[[pages:users/online]]',
+			breadcrumbs: helpers.buildBreadcrumbs([{text: '[[global:users]]', url: '/users'}, {text: '[[global:online]]'}])
 		};
 
 		render(req, res, userData, next);
@@ -62,6 +58,9 @@ usersController.getUsersSortedByPosts = function(req, res, next) {
 };
 
 usersController.getUsersSortedByReputation = function(req, res, next) {
+	if (parseInt(meta.config['reputation:disabled'], 10) === 1) {
+		return next();
+	}
 	usersController.getUsers('users:reputation', 0, 49, req, res, next);
 };
 
@@ -75,17 +74,32 @@ usersController.getUsers = function(set, start, stop, req, res, next) {
 		'users:reputation': '[[pages:users/sort-reputation]]',
 		'users:joindate': '[[pages:users/latest]]'
 	};
+
+	var setToCrumbs = {
+		'users:postcount': '[[users:top_posters]]',
+		'users:reputation': '[[users:most_reputation]]',
+		'users:joindate': '[[global:users]]'
+	};
+
+	var breadcrumbs = [{text: setToCrumbs[set]}];
+
+	if (set !== 'users:joindate') {
+		breadcrumbs.unshift({text: '[[global:users]]', url: '/users'});
+	}
+
 	usersController.getUsersAndCount(set, req.uid, start, stop, function(err, data) {
 		if (err) {
 			return next(err);
 		}
+
 		var pageCount = Math.ceil(data.count / (parseInt(meta.config.userSearchResultsPerPage, 10) || 20));
 		var userData = {
 			search_display: 'hidden',
 			loadmore_display: data.count > (stop - start + 1) ? 'block' : 'hide',
 			users: data.users,
 			pagination: pagination.create(1, pageCount),
-			title: setToTitles[set] || '[[pages:users/latest]]'
+			title: setToTitles[set] || '[[pages:users/latest]]',
+			breadcrumbs: helpers.buildBreadcrumbs(breadcrumbs)
 		};
 		userData['route_' + set] = true;
 		render(req, res, userData, next);
@@ -127,93 +141,36 @@ usersController.getUsersForSearch = function(req, res, next) {
 			search_display: 'block',
 			loadmore_display: 'hidden',
 			users: data.users,
-			title: '[[pages:users/search]]'
+			title: '[[pages:users/search]]',
+			breadcrumbs: helpers.buildBreadcrumbs([{text: '[[global:users]]', url: '/users'}, {text: '[[global:search]]'}])
 		};
 
 		render(req, res, userData, next);
 	});
 };
 
-usersController.getMap = function(req, res, next) {
-	var socketIO = require('../socket.io');
-	var rooms = require('../socket.io/rooms');
+function render(req, res, data, next) {
+	plugins.fireHook('filter:users.build', { req: req, res: res, templateData: data }, function(err, data) {
+		if (err) {
+			return next(err);
+		}
 
-	var roomNames = ['user_list', 'categories', 'unread_topics', 'recent_topics', 'popular_topics', 'tags'];
-	var links = {
-		user_list: '/users',
-		categories: '/categories',
-		unread_topics: '/unread',
-		recent_topics: '/recent',
-		popular_topics: '/popular',
-		tags: '/tags'
-	};
+		var registrationType = meta.config.registrationType;
 
-	var keys = Object.keys(rooms.roomClients());
+		data.templateData.maximumInvites = meta.config.maximumInvites;
+		data.templateData.inviteOnly = registrationType === 'invite-only' || registrationType === 'admin-invite-only';
+		data.templateData.adminInviteOnly = registrationType === 'admin-invite-only';
+		data.templateData['reputation:disabled'] = parseInt(meta.config['reputation:disabled'], 10) === 1;
 
-	keys = keys.filter(function(key) {
-		return key.startsWith('topic_') || key.startsWith('category_');
-	});
-
-	roomNames = roomNames.concat(keys);
-
-	async.map(roomNames, function(roomName, next) {
-		socketIO.getUsersInRoom(0, roomName, 0, 39, function(err, data) {
+		user.getInvitesNumber(req.uid, function(err, num) {
 			if (err) {
 				return next(err);
 			}
 
-			if (roomName.startsWith('category_')) {
-				var cid = roomName.split('_')[1];
-				categories.getCategoryFields(cid, ['slug', 'name'], function(err, categoryData) {
-					if (err) {
-						return next(err);
-					}
-					data.room = validator.escape(categoryData.name);
-					data.link = '/category/' + categoryData.slug;
-					data.core = false;
-					next(null, data);
-				});
-			} else if (roomName.startsWith('topic_')) {
-				var tid = roomName.split('_')[1];
-				topics.getTopicFields(tid, ['slug', 'title'], function(err, topicData) {
-					if (err) {
-						return next(err);
-					}
-					data.room = validator.escape(topicData.title);
-					data.link = '/topic/' + topicData.slug;
-					data.core = false;
-					next(null, data);
-				});
-			} else {
-				data.core = true;
-				next(null, data);
-			}
-		});
-	}, function(err, data) {
-		if (err) {
-			return next(err);
-		}
-		data.sort(function(a, b) {
-			return b.users.length - a.users.length;
+			data.templateData.invites = num;
+			res.render('users', data.templateData);
 		});
 
-		data.forEach(function(room) {
-			if (!room.link) {
-				room.link = links[room.room];
-			}
-		});
-
-		res.render('usersMap', {rooms: data, title: '[[pages:users/map]]'});
-	});
-};
-
-function render(req, res, data, next) {
-	plugins.fireHook('filter:users.build', {req: req, res: res, templateData: data}, function(err, data) {
-		if (err) {
-			return next(err);
-		}
-		data.templateData.inviteOnly = meta.config.registrationType === 'invite-only';
-		res.render('users', data.templateData);
 	});
 }
 

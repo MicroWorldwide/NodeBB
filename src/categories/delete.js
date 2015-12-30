@@ -4,15 +4,14 @@ var async = require('async'),
 	db = require('../database'),
 	batch = require('../batch'),
 	plugins = require('../plugins'),
-	threadTools = require('../threadTools');
-
+	topics = require('../topics');
 
 module.exports = function(Categories) {
 
 	Categories.purge = function(cid, callback) {
 		batch.processSortedSet('cid:' + cid + ':tids', function(tids, next) {
 			async.eachLimit(tids, 10, function(tid, next) {
-				threadTools.purge(tid, 0, next);
+				topics.purgePostsAndTopic(tid, next);
 			}, next);
 		}, {alwaysStartAt: 0}, function(err) {
 			if (err) {
@@ -26,7 +25,7 @@ module.exports = function(Categories) {
 	};
 
 	function purgeCategory(cid, callback) {
-		async.parallel([
+		async.series([
 			function(next) {
 				db.sortedSetRemove('categories:cid', cid, next);
 			},
@@ -66,7 +65,14 @@ module.exports = function(Categories) {
 					},
 					function(next) {
 						async.each(results.children, function(cid, next) {
-							db.setObjectField('category:' + cid, 'parentCid', 0, next);
+							async.parallel([
+								function(next) {
+									db.setObjectField('category:' + cid, 'parentCid', 0, next);
+								},
+								function(next) {
+									db.sortedSetAdd('cid:0:children', cid, cid, next);
+								}
+							], next);
 						}, next);
 					}
 				], next);
