@@ -22,16 +22,15 @@
 
 var nconf = require('nconf');
 nconf.argv().env('__');
+require('continuation-local-storage');
 
 var url = require('url'),
 	async = require('async'),
-	semver = require('semver'),
 	winston = require('winston'),
 	colors = require('colors'),
 	path = require('path'),
 	pkg = require('./package.json'),
-	file = require('./src/file'),
-	utils = require('./public/src/utils.js');
+	file = require('./src/file');
 
 global.env = process.env.NODE_ENV || 'production';
 
@@ -119,7 +118,7 @@ function start() {
 	var urlObject = url.parse(nconf.get('url'));
 	var relativePath = urlObject.pathname !== '/' ? urlObject.pathname : '';
 	nconf.set('base_url', urlObject.protocol + '//' + urlObject.host);
-	nconf.set('secure', urlObject.protocol === 'https');
+	nconf.set('secure', urlObject.protocol === 'https:');
 	nconf.set('use_port', !!urlObject.port);
 	nconf.set('relative_path', relativePath);
 	nconf.set('port', urlObject.port || nconf.get('port') || nconf.get('PORT') || 4567);
@@ -151,8 +150,7 @@ function start() {
 				meta.reload();
 			break;
 			case 'js-propagate':
-				meta.js.cache = message.cache;
-				meta.js.map = message.map;
+				meta.js.target = message.data;
 				emitter.emit('meta:js.compiled');
 				winston.verbose('[cluster] Client-side javascript and mapping propagated to worker %s', process.pid);
 			break;
@@ -183,7 +181,11 @@ function start() {
 			require('./src/meta').configs.init(next);
 		},
 		function(next) {
-			require('./src/meta').dependencies.check(next);
+			if (nconf.get('dep-check') === undefined || nconf.get('dep-check') !== false) {
+				require('./src/meta').dependencies.check(next);
+			} else {
+				setImmediate(next);
+			}
 		},
 		function(next) {
 			require('./src/upgrade').check(next);
@@ -208,6 +210,10 @@ function start() {
 					break;
 				case 'dependencies-out-of-date':
 					winston.warn('One or more of NodeBB\'s dependent packages are out-of-date. Please run the following command to update them:');
+					winston.warn('    ./nodebb upgrade');
+					break;
+				case 'dependencies-missing':
+					winston.warn('One or more of NodeBB\'s dependent packages are missing. Please run the following command to update them:');
 					winston.warn('    ./nodebb upgrade');
 					break;
 				default:
@@ -279,7 +285,7 @@ function upgrade() {
 
 function activate() {
 	require('./src/database').init(function(err) {
-		var plugin = nconf.get('activate'),
+		var plugin = nconf.get('_')[1] ? nconf.get('_')[1] : nconf.get('activate'),
 			db = require('./src/database');
 
 		winston.info('Activating plugin %s', plugin);

@@ -1,17 +1,16 @@
 
 'use strict';
 
-var async = require('async'),
-	nconf = require('nconf'),
-	request = require('request'),
+var async = require('async');
+var request = require('request');
 
-	db = require('../database'),
-	meta = require('../meta'),
-	emailer = require('../emailer'),
-	notifications = require('../notifications'),
-	groups = require('../groups'),
-	translator = require('../../public/src/modules/translator'),
-	utils = require('../../public/src/utils');
+var db = require('../database');
+var meta = require('../meta');
+var emailer = require('../emailer');
+var notifications = require('../notifications');
+var groups = require('../groups');
+var translator = require('../../public/src/modules/translator');
+var utils = require('../../public/src/utils');
 
 
 module.exports = function(User) {
@@ -48,16 +47,14 @@ module.exports = function(User) {
 		notifications.create({
 			bodyShort: '[[notifications:new_register, ' + username + ']]',
 			nid: 'new_register:' + username,
-			path: '/admin/manage/registration'
+			path: '/admin/manage/registration',
+			mergeId: 'new_register'
 		}, function(err, notification) {
-			if (err) {
+			if (err || !notification) {
 				return callback(err);
 			}
-			if (notification) {
-				notifications.pushGroup(notification, 'administrators', callback);
-			} else {
-				callback();
-			}
+
+			notifications.pushGroup(notification, 'administrators', callback);
 		});
 	}
 
@@ -92,9 +89,6 @@ module.exports = function(User) {
 
 					emailer.send('registration_accepted', uid, data, next);
 				});
-			},
-			function(next) {
-				User.notifications.sendWelcomeNotification(uid, next);
 			},
 			function(next) {
 				removeFromQueue(username, next);
@@ -134,7 +128,7 @@ module.exports = function(User) {
 		async.parallel([
 			async.apply(db.sortedSetRemove, 'registration:queue', username),
 			async.apply(db.delete, 'registration:queue:name:' + username)
-		], function(err, results) {
+		], function(err) {
 			callback(err);
 		});
 	}
@@ -153,11 +147,16 @@ module.exports = function(User) {
 				db.getObjects(keys, next);
 			},
 			function(users, next) {
-				users.forEach(function(user, index) {
-					if (user) {
-						user.timestamp = utils.toISOString(data[index].score);
+				users = users.map(function(user, index) {
+					if (!user) {
+						return null;
 					}
-				});
+
+					user.timestampISO = utils.toISOString(data[index].score);
+					delete user.hashedPassword;
+
+					return user;
+				}).filter(Boolean);
 
 				async.map(users, function(user, next) {
 					if (!user) {
@@ -167,18 +166,25 @@ module.exports = function(User) {
 					// temporary: see http://www.stopforumspam.com/forum/viewtopic.php?id=6392
 					user.ip = user.ip.replace('::ffff:', '');
 
-					request('http://api.stopforumspam.org/api?ip=' + user.ip + '&email=' + user.email + '&username=' + user.username + '&f=json', function (err, response, body) {
+					request({
+						method: 'get',
+						url: 'http://api.stopforumspam.org/api' +
+								'?ip=' + encodeURIComponent(user.ip) +
+								'&email=' + encodeURIComponent(user.email) +
+								'&username=' + encodeURIComponent(user.username) +
+								'&f=json',
+						json: true
+					}, function (err, response, body) {
 						if (err) {
 							return next(null, user);
 						}
-						if (response.statusCode === 200) {
-							var data = JSON.parse(body);
-							user.spamData = data;
-
-							user.usernameSpam = data.username.frequency > 0 || data.username.appears > 0;
-							user.emailSpam = data.email.frequency > 0 || data.email.appears > 0;
-							user.ipSpam = data.ip.frequency > 0 || data.ip.appears > 0;
+						if (response.statusCode === 200 && body) {
+							user.spamData = body;
+							user.usernameSpam = body.username ? (body.username.frequency > 0 || body.username.appears > 0) : true;
+							user.emailSpam = body.email ? (body.email.frequency > 0 || body.email.appears > 0) : true;
+							user.ipSpam = body.ip ? (body.ip.frequency > 0 || body.ip.appears > 0) : true;
 						}
+
 						next(null, user);
 					});
 				}, next);

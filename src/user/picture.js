@@ -3,6 +3,7 @@
 var async = require('async'),
 	path = require('path'),
 	fs = require('fs'),
+	os = require('os'),
 	nconf = require('nconf'),
 	crypto = require('crypto'),
 	winston = require('winston'),
@@ -24,6 +25,7 @@ module.exports = function(User) {
 		var updateUid = uid;
 		var imageDimension = parseInt(meta.config.profileImageDimension, 10) || 128;
 		var convertToPNG = parseInt(meta.config['profile:convertProfileImageToPNG'], 10) === 1;
+		var uploadedImage;
 
 		async.waterfall([
 			function(next) {
@@ -36,64 +38,62 @@ module.exports = function(User) {
 				next(!extension ? new Error('[[error:invalid-image-extension]]') : null);
 			},
 			function(next) {
-				file.isFileTypeAllowed(picture.path, next);
+				if (plugins.hasListeners('filter:uploadImage')) {
+					return plugins.fireHook('filter:uploadImage', {image: picture, uid: updateUid}, next);
+				}
+
+				var filename = updateUid + '-profileimg' + (convertToPNG ? '.png' : extension);
+
+				async.waterfall([
+					function(next) {
+						file.isFileTypeAllowed(picture.path, next);
+					},
+					function(next) {
+						image.resizeImage({
+							path: picture.path,
+							extension: extension,
+							width: imageDimension,
+							height: imageDimension
+						}, next);
+					},
+					function(next) {
+						if (!convertToPNG) {
+							return next();
+						}
+						async.series([
+							async.apply(image.normalise, picture.path, extension),
+							async.apply(fs.rename, picture.path + '.png', picture.path)
+						], function(err) {
+							next(err);
+						});
+					},
+					function(next) {
+						User.getUserField(updateUid, 'uploadedpicture', next);
+					},
+					function(oldpicture, next) {
+						if (!oldpicture) {
+							return file.saveFileToLocal(filename, 'profile', picture.path, next);
+						}
+						var oldpicturePath = path.join(nconf.get('base_dir'), nconf.get('upload_path'), 'profile', path.basename(oldpicture));
+
+						fs.unlink(oldpicturePath, function (err) {
+							if (err) {
+								winston.error(err);
+							}
+
+							file.saveFileToLocal(filename, 'profile', picture.path, next);
+						});
+					},
+				], next);
+			},
+			function(_image, next) {
+				uploadedImage = _image;
+				User.setUserFields(updateUid, {uploadedpicture: uploadedImage.url, picture: uploadedImage.url}, next);
 			},
 			function(next) {
-				image.resizeImage({
-					path: picture.path,
-					extension: extension,
-					width: imageDimension,
-					height: imageDimension
-				}, next);
-			},
-			function(next) {
-				if (convertToPNG) {
-					image.normalise(picture.path, extension, next);
-				} else {
-					next();
-				}
+				next(null, uploadedImage);
 			}
-		], function(err) {
-			function done(err, image) {
-				if (err) {
-					return callback(err);
-				}
-
-				User.setUserFields(updateUid, {uploadedpicture: image.url, picture: image.url});
-
-				callback(null, image);
-			}
-
-			if (err) {
-				return callback(err);
-			}
-
-			if (plugins.hasListeners('filter:uploadImage')) {
-				return plugins.fireHook('filter:uploadImage', {image: picture, uid: updateUid}, done);
-			}
-
-			var filename = updateUid + '-profileimg' + (convertToPNG ? '.png' : extension);
-
-			User.getUserField(updateUid, 'uploadedpicture', function (err, oldpicture) {
-				if (err) {
-					return callback(err);
-				}
-
-				if (!oldpicture) {
-					return file.saveFileToLocal(filename, 'profile', picture.path, done);
-				}
-
-				var absolutePath = path.join(nconf.get('base_dir'), nconf.get('upload_path'), 'profile', path.basename(oldpicture));
-
-				fs.unlink(absolutePath, function (err) {
-					if (err) {
-						winston.error(err);
-					}
-
-					file.saveFileToLocal(filename, 'profile', picture.path, done);
-				});
-			});
-		});
+		], callback);
 	};
 
 	User.uploadFromUrl = function(uid, url, callback) {
@@ -134,7 +134,7 @@ module.exports = function(User) {
 	};
 
 	User.updateCoverPicture = function(data, callback) {
-		var tempPath, url, md5sum;
+		var url, md5sum;
 
 		if (!data.imageData && data.position) {
 			return User.updateCoverPosition(data.uid, data.position, callback);
@@ -160,17 +160,20 @@ module.exports = function(User) {
 				md5sum.update(data.imageData);
 				md5sum = md5sum.digest('hex');
 
-				tempPath = path.join(nconf.get('base_dir'), nconf.get('upload_path'), md5sum);
+				data.file = {
+					path: path.join(os.tmpdir(), md5sum)
+				};
+
 				var buffer = new Buffer(data.imageData.slice(data.imageData.indexOf('base64') + 7), 'base64');
 
-				fs.writeFile(tempPath, buffer, {
+				fs.writeFile(data.file.path, buffer, {
 					encoding: 'base64'
 				}, next);
 			},
 			function(next) {
 				var image = {
 					name: 'profileCover',
-					path: data.file ? data.file.path : tempPath,
+					path: data.file.path,
 					uid: data.uid
 				};
 
@@ -179,23 +182,27 @@ module.exports = function(User) {
 				}
 
 				var filename = data.uid + '-profilecover';
-				file.saveFileToLocal(filename, 'profile', image.path, function(err, upload) {
-					if (err) {
-						return next(err);
+				async.waterfall([
+					function (next) {
+						file.isFileTypeAllowed(data.file.path, next);
+					},
+					function (next) {
+						file.saveFileToLocal(filename, 'profile', image.path, next);
+					},
+					function (upload, next) {
+						next(null, {
+							url: nconf.get('relative_path') + upload.url,
+							name: image.name
+						});
 					}
-
-					next(null, {
-						url: nconf.get('relative_path') + upload.url,
-						name: image.name
-					});
-				});
+				], next);
 			},
 			function(uploadData, next) {
 				url = uploadData.url;
 				User.setUserField(data.uid, 'cover:url', uploadData.url, next);
 			},
 			function(next) {
-				require('fs').unlink(data.file ? data.file.path : tempPath, function(err) {
+				fs.unlink(data.file.path, function(err) {
 					if (err) {
 						winston.error(err);
 					}
@@ -204,7 +211,9 @@ module.exports = function(User) {
 			}
 		], function(err) {
 			if (err) {
-				return callback(err);
+				return fs.unlink(data.file.path, function(unlinkErr) {
+					callback(err);	// send back the original error
+				});
 			}
 
 			if (data.position) {

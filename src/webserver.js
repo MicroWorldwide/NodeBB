@@ -12,6 +12,7 @@ var path = require('path'),
 
 	emailer = require('./emailer'),
 	meta = require('./meta'),
+	languages = require('./languages'),
 	logger = require('./logger'),
 	plugins = require('./plugins'),
 	middleware = require('./middleware'),
@@ -45,7 +46,7 @@ server.on('error', function(err) {
 module.exports.listen = function() {
 	emailer.registerApp(app);
 
-	middleware = middleware(app);
+	app.locals.middleware = middleware = middleware(app);
 
 	helpers.register();
 
@@ -78,23 +79,22 @@ function initializeNodeBB(callback) {
 		skipJS = true;
 	}
 
-	if (fromFile.match('less')) {
-		winston.info('[minifier] Compiling LESS files skipped');
-		skipLess = true;
-	}
-
 	async.waterfall([
 		async.apply(cacheStaticFiles),
 		async.apply(meta.themes.setupPaths),
 		function(next) {
 			plugins.init(app, middleware, next);
 		},
+		async.apply(meta.js.bridgeModules, app),
 		function(next) {
-			async.parallel([
+			async.series([
 				async.apply(meta.templates.compile),
-				async.apply(!skipJS ? meta.js.minify : meta.js.getFromFile, app.enabled('minification')),
-				async.apply(!skipLess ? meta.css.minify : meta.css.getFromFile),
-				async.apply(meta.sounds.init)
+				async.apply(!skipJS ? meta.js.minify : meta.js.getFromFile, 'nodebb.min.js'),
+				async.apply(!skipJS ? meta.js.minify : meta.js.getFromFile, 'acp.min.js'),
+				async.apply(meta.css.minify),
+				async.apply(meta.sounds.init),
+				async.apply(languages.init),
+				async.apply(meta.blacklist.load)
 			], next);
 		},
 		function(results, next) {
@@ -103,8 +103,9 @@ function initializeNodeBB(callback) {
 				middleware: middleware
 			}, next);
 		},
-		function(next) {
-			routes(app, middleware);
+		async.apply(plugins.fireHook, 'filter:hotswap.prepare', []),
+		function(hotswapIds, next) {
+			routes(app, middleware, hotswapIds);
 			next();
 		}
 	], callback);

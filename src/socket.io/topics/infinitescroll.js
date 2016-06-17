@@ -6,6 +6,7 @@ var topics = require('../../topics');
 var privileges = require('../../privileges');
 var meta = require('../../meta');
 var utils = require('../../../public/src/utils');
+var social = require('../../social');
 
 module.exports = function(SocketTopics) {
 
@@ -68,6 +69,9 @@ module.exports = function(SocketTopics) {
 				},
 				posts: function(next) {
 					topics.getTopicPosts(data.tid, set, start, stop, socket.uid, reverse, next);
+				},
+				postSharing: function (next) {
+					social.getActivePostSharing(next);
 				}
 			}, function(err, topicData) {
 				if (err) {
@@ -81,25 +85,25 @@ module.exports = function(SocketTopics) {
 				topicData['reputation:disabled'] = parseInt(meta.config['reputation:disabled'], 10) === 1;
 				topicData['downvote:disabled'] = parseInt(meta.config['downvote:disabled'], 10) === 1;
 
-				topics.modifyByPrivilege(topicData.posts, results.privileges);
+				topics.modifyPostsByPrivilege(topicData, results.privileges);
 				callback(null, topicData);
 			});
 		});
 	};
 
 	SocketTopics.loadMoreUnreadTopics = function(socket, data, callback) {
-		if (!data || !data.after) {
+		if (!data || !utils.isNumber(data.after) || parseInt(data.after, 10) < 0) {
 			return callback(new Error('[[error:invalid-data]]'));
 		}
 
-		var start = parseInt(data.after, 10),
-			stop = start + 9;
+		var start = parseInt(data.after, 10);
+		var stop = start + 9;
 
-		topics.getUnreadTopics(data.cid, socket.uid, start, stop, callback);
+		topics.getUnreadTopics(data.cid, socket.uid, start, stop, data.filter, callback);
 	};
 
 	SocketTopics.loadMoreFromSet = function(socket, data, callback) {
-		if (!data || !data.after || !data.set) {
+		if (!data || !utils.isNumber(data.after) || parseInt(data.after, 10) < 0 || !data.set) {
 			return callback(new Error('[[error:invalid-data]]'));
 		}
 

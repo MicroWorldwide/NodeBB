@@ -1,14 +1,22 @@
 "use strict";
 /* globals app, define, socket, templates, utils, ajaxify */
 
-define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'translator'], function(components, taskbar, S, sounds, Chats, translator) {
+define('chat', [
+	'components',
+	'taskbar',
+	'string',
+	'sounds',
+	'forum/chats',
+	'forum/chats/messages',
+	'translator'
+], function(components, taskbar, S, sounds, Chats, ChatsMessages, translator) {
 
 	var module = {};
 	var newMessage = false;
 
 	module.prepareDOM = function() {
-		var	chatsToggleEl = components.get('chat/dropdown'),
-			chatsListEl = components.get('chat/list');
+		var chatsToggleEl = components.get('chat/dropdown');
+		var chatsListEl = components.get('chat/list');
 
 		chatsToggleEl.on('click', function() {
 			if (chatsToggleEl.parent().hasClass('open')) {
@@ -16,6 +24,14 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 			}
 
 			module.loadChatsDropdown(chatsListEl);
+		});
+
+		$('[component="chats/mark-all-read"]').on('click', function() {
+			socket.emit('modules.chats.markAllRead', function(err) {
+				if (err) {
+					return app.alertError(err);
+				}
+			});
 		});
 
 		socket.on('event:chats.receive', function(data) {
@@ -27,11 +43,11 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 			if (module.modalExists(data.roomId)) {
 				var modal = module.getModal(data.roomId);
 
-				Chats.appendChatMessage(modal.find('.chat-content'), data.message);
+				ChatsMessages.appendChatMessage(modal.find('.chat-content'), data.message);
 
 				if (modal.is(':visible')) {
 					taskbar.updateActive(modal.attr('UUID'));
-					Chats.scrollToBottom(modal.find('.chat-content'));
+					ChatsMessages.scrollToBottom(modal.find('.chat-content'));
 				} else {
 					module.toggleNew(modal.attr('UUID'), true, true);
 				}
@@ -42,7 +58,8 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 
 					taskbar.push('chat', modal.attr('UUID'), {
 						title: username,
-						touid: data.message.fromUser.uid
+						touid: data.message.fromUser.uid,
+						roomId: data.roomId
 					});
 				}
 			} else {
@@ -55,7 +72,7 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 					});
 					roomData.silent = true;
 					module.createModal(roomData, function(modal) {
-						module.toggleNew(modal.attr('UUID'), true, true);
+						module.toggleNew(modal.attr('UUID'), !isSelf, true);
 						if (!isSelf) {
 							app.alternatingTitle('[[modules:chat.user_has_messaged_you, ' + username + ']]');
 							sounds.play('chat-incoming');
@@ -65,44 +82,27 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 			}
 		});
 
-		socket.on('event:chats.userStartTyping', function(withUid) {
-			var modal = module.getModal(withUid);
-			var chatContent = modal.find('.chat-content');
-			if (!chatContent.length) {
-				return;
-			}
-			var atBottom = chatContent[0].scrollHeight - chatContent.scrollTop() === chatContent.innerHeight();
-
-			modal.find('.user-typing').removeClass('hide');
-			if (atBottom) {
-				Chats.scrollToBottom(chatContent);
-			}
-		});
-
-		socket.on('event:chats.userStopTyping', function(withUid) {
-			var modal = module.getModal(withUid);
-			modal.find('.user-typing').addClass('hide');
-		});
-
 		socket.on('event:user_status_change', function(data) {
 			var modal = module.getModal(data.uid);
 			app.updateUserStatus(modal.find('[component="user/status"]'), data.status);
 		});
 
 		socket.on('event:chats.roomRename', function(data) {
-			module.getModal(data.roomId).find('[component="chat/room/name"]').val(data.newName);
+			module.getModal(data.roomId).find('[component="chat/room/name"]').val($('<div/>').html(data.newName).text());
 		});
+
+		ChatsMessages.onChatMessageEdit();
 	};
 
 	module.loadChatsDropdown = function(chatsListEl) {
-
-
 		socket.emit('modules.chats.getRecentChats', {after: 0}, function(err, data) {
 			if (err) {
 				return app.alertError(err.message);
 			}
 
-			var rooms = data.rooms;
+			var rooms = data.rooms.filter(function(room) {
+			    return room.teaser;
+			});
 
 			chatsListEl.empty();
 
@@ -204,6 +204,7 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 
 				app.loadJQueryUI(function() {
 					chatModal.find('.modal-content').resizable({
+						handles: 'n, e, s, w, se',
 						minHeight: 250,
 						minWidth: 400
 					});
@@ -266,16 +267,14 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 					}
 				});
 
-				chatModal.find('[component="chat/messages"]')
-					.on('click', '[data-action="edit"]', function() {
-						var messageId = $(this).parents('[data-mid]').attr('data-mid');
-						var inputEl = chatModal.find('[component="chat/input"]');
-						Chats.prepEdit(inputEl, messageId, data.roomId);
-					})
-					.on('click', '[data-action="delete"]', function() {
-						var messageId = $(this).parents('[data-mid]').attr('data-mid');
-						Chats.delete(messageId, data.roomId);
-					});
+				Chats.addEditDeleteHandler(chatModal.find('[component="chat/messages"]'), data.roomId);
+
+				chatModal.find('[component="chat/controlsToggle"]').on('click', function() {
+					var messagesEl = chatModal.find('[component="chat/messages"]');
+
+					chatModal.find('[component="chat/controls"]').toggle();
+					messagesEl.css('height', module.calculateChatListHeight(chatModal));
+				});
 
 				Chats.addSinceHandler(chatModal.attr('roomId'), chatModal.find('.chat-content'), chatModal.find('[data-since]'));
 				Chats.addRenameHandler(chatModal.attr('roomId'), chatModal.find('[component="chat/room/name"]'));
@@ -283,6 +282,7 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 				Chats.addSendHandlers(chatModal.attr('roomId'), chatModal.find('#chat-message-input'), chatModal.find('#chat-message-send-btn'));
 
 				Chats.createTagsInput(chatModal.find('.users-tag-input'), data);
+				Chats.createAutoComplete(chatModal.find('[component="chat/input"]'));
 
 				Chats.loadChatSince(chatModal.attr('roomId'), chatModal.find('.chat-content'), 'recent');
 
@@ -308,13 +308,12 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 		chatModal.find('#chat-message-input').focus();
 	};
 
-	module.close = function(chatModal, silent) {
+	module.close = function(chatModal) {
 		clearInterval(chatModal.attr('intervalId'));
 		chatModal.attr('intervalId', 0);
 		chatModal.remove();
 		chatModal.data('modal', null);
 		taskbar.discard('chat', chatModal.attr('UUID'));
-		Chats.notifyTyping(chatModal.attr('roomId'), false);
 
 		if (chatModal.attr('data-mobile')) {
 			module.disableMobileBehaviour(chatModal);
@@ -341,7 +340,7 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 		chatModal.removeClass('hide');
 		checkStatus(chatModal);
 		taskbar.updateActive(uuid);
-		Chats.scrollToBottom(chatModal.find('.chat-content'));
+		ChatsMessages.scrollToBottom(chatModal.find('.chat-content'));
 		module.bringModalToTop(chatModal);
 		module.focusInput(chatModal);
 		socket.emit('modules.chats.markRead', chatModal.attr('roomId'));
@@ -368,13 +367,13 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 	};
 
 	module.calculateChatListHeight = function(modalEl) {
-		var totalHeight = modalEl.find('.modal-content').outerHeight() - modalEl.find('.modal-header').outerHeight(),
-			padding = parseInt(modalEl.find('.modal-body').css('padding-top'), 10) + parseInt(modalEl.find('.modal-body').css('padding-bottom'), 10),
-			contentMargin = parseInt(modalEl.find('.chat-content').css('margin-top'), 10) + parseInt(modalEl.find('.chat-content').css('margin-bottom'), 10),
-			sinceHeight = modalEl.find('.since-bar').outerHeight(true),
-			inputGroupHeight = modalEl.find('.input-group').outerHeight();
+		var totalHeight = modalEl.find('.modal-content').outerHeight() - modalEl.find('.modal-header').outerHeight();
+		var padding = parseInt(modalEl.find('.modal-body').css('padding-top'), 10) + parseInt(modalEl.find('.modal-body').css('padding-bottom'), 10);
+		var contentMargin = parseInt(modalEl.find('.chat-content').css('margin-top'), 10) + parseInt(modalEl.find('.chat-content').css('margin-bottom'), 10);
+		var sinceHeight = modalEl.find('.since-bar').outerHeight(true);
+		var inputGroupHeight = modalEl.find('.input-group').outerHeight();
 
-		return totalHeight - padding - contentMargin - sinceHeight - inputGroupHeight;
+		return totalHeight - padding - contentMargin - inputGroupHeight;
 	};
 
 	module.minimize = function(uuid) {
@@ -383,7 +382,6 @@ define('chat', ['components', 'taskbar', 'string', 'sounds', 'forum/chats', 'tra
 		taskbar.minimize('chat', uuid);
 		clearInterval(chatModal.attr('intervalId'));
 		chatModal.attr('intervalId', 0);
-		Chats.notifyTyping(chatModal.attr('roomId'), false);
 	};
 
 	module.toggleNew = taskbar.toggleNew;

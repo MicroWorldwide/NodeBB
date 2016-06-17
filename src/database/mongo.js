@@ -37,8 +37,8 @@
 		},
 		{
 			name: "mongo:database",
-			description: "Which database to use",
-			'default': nconf.get('mongo:database') || 0
+			description: "MongoDB database name",
+			'default': nconf.get('mongo:database') || 'nodebb'
 		}
 	];
 
@@ -52,7 +52,7 @@
 			mongoClient = require('mongodb').MongoClient;
 
 			if (!nconf.get('redis')) {
-				sessionStore = require('connect-mongo')(session);
+				sessionStore = require('connect-mongo/es5')(session);
 			} else {
 				sessionStore = require('connect-redis')(session);
 			}
@@ -74,7 +74,7 @@
 			nconf.set('mongo:port', 27017);
 		}
 		if (!nconf.get('mongo:database')) {
-			nconf.set('mongo:database', '0');
+			nconf.set('mongo:database', 'nodebb');
 		}
 
 		var hosts = nconf.get('mongo:host').split(',');
@@ -106,8 +106,6 @@
 			module.client = db;
 
 			if (!nconf.get('redis')) {
-				// TEMP: to fix connect-mongo, see https://github.com/kcbanner/connect-mongo/issues/161
-				db.openCalled = true;
 				module.sessionStore = new sessionStore({
 					db: db
 				});

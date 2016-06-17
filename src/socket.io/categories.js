@@ -6,7 +6,7 @@ var categories = require('../categories');
 var privileges = require('../privileges');
 var user = require('../user');
 var topics = require('../topics');
-
+var apiController = require('../controllers/api');
 
 var SocketCategories = {};
 
@@ -112,11 +112,14 @@ SocketCategories.loadMore = function(socket, data, callback) {
 			start: start,
 			stop: stop,
 			uid: socket.uid,
-			targetUid: results.targetUid
+			targetUid: results.targetUid,
+			settings: results.settings
 		}, function(err, data) {
 			if (err) {
 				return callback(err);
 			}
+
+			categories.modifyTopicsByPrivilege(data.topics, results.privileges);
 
 			data.privileges = results.privileges;
 			data.template = {
@@ -187,6 +190,10 @@ SocketCategories.ignore = function(socket, cid, callback) {
 
 SocketCategories.isModerator = function(socket, cid, callback) {
 	user.isModerator(socket.uid, cid, callback);
+};
+
+SocketCategories.getCategory = function(socket, cid, callback) {
+	apiController.getObjectByType(socket.uid, 'category', cid, callback);
 };
 
 module.exports = SocketCategories;

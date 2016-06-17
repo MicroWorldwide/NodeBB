@@ -67,21 +67,31 @@ module.exports = function(app, middleware) {
 		templateValues.configJSON = JSON.stringify(res.locals.config);
 
 		async.parallel({
+			scripts: function(next) {
+				plugins.fireHook('filter:scripts.get', [], next);
+			},
 			isAdmin: function(next) {
 				user.isAdministrator(req.uid, next);
 			},
+			isGlobalMod: function(next) {
+				user.isGlobalModerator(req.uid, next);
+			},
 			user: function(next) {
+				var userData = {
+					uid: 0,
+					username: '[[global:guest]]',
+					userslug: '',
+					email: '',
+					picture: meta.config.defaultAvatar,
+					status: 'offline',
+					banned: false,
+					reputation: 0,
+					'email:confirmed': false
+				};
 				if (req.uid) {
-					user.getUserFields(req.uid, ['username', 'userslug', 'email', 'picture', 'status', 'email:confirmed', 'banned'], next);
+					user.getUserFields(req.uid, Object.keys(userData), next);
 				} else {
-					next(null, {
-						username: '[[global:guest]]',
-						userslug: '',
-						picture: meta.config.defaultAvatar,
-						status: 'offline',
-						banned: false,
-						uid: 0
-					});
+					next(null, userData);
 				}
 			},
 			navigation: async.apply(navigation.get),
@@ -97,10 +107,11 @@ module.exports = function(app, middleware) {
 			}
 
 			results.user.isAdmin = results.isAdmin;
+			results.user.isGlobalMod = results.isGlobalMod;
 			results.user.uid = parseInt(results.user.uid, 10);
 			results.user['email:confirmed'] = parseInt(results.user['email:confirmed'], 10) === 1;
 
-			if (res.locals.config.bootswatchSkin !== 'default') {
+			if (parseInt(meta.config.disableCustomUserSkins, 10) !== 1 && res.locals.config.bootswatchSkin !== 'default') {
 				templateValues.bootswatchCSS = '//maxcdn.bootstrapcdn.com/bootswatch/latest/' + res.locals.config.bootswatchSkin + '/bootstrap.min.css';
 			}
 
@@ -109,6 +120,7 @@ module.exports = function(app, middleware) {
 			templateValues.metaTags = results.tags.meta;
 			templateValues.linkTags = results.tags.link;
 			templateValues.isAdmin = results.user.isAdmin;
+			templateValues.isGlobalMod = results.user.isGlobalMod;
 			templateValues.user = results.user;
 			templateValues.userJSON = JSON.stringify(results.user);
 			templateValues.useCustomCSS = parseInt(meta.config.useCustomCSS, 10) === 1 && meta.config.customCSS;
@@ -117,9 +129,15 @@ module.exports = function(app, middleware) {
 			templateValues.customJS = templateValues.useCustomJS ? meta.config.customJS : '';
 			templateValues.maintenanceHeader = parseInt(meta.config.maintenanceMode, 10) === 1 && !results.isAdmin;
 			templateValues.defaultLang = meta.config.defaultLang || 'en_GB';
+			templateValues.privateUserInfo = parseInt(meta.config.privateUserInfo, 10) === 1;
+			templateValues.privateTagListing = parseInt(meta.config.privateTagListing, 10) === 1;
 
 			templateValues.template = {name: res.locals.template};
 			templateValues.template[res.locals.template] = true;
+
+			templateValues.scripts = results.scripts.map(function(script) {
+				return {src: script};
+			});
 
 			if (req.route && req.route.path === '/') {
 				modifyTitle(templateValues);

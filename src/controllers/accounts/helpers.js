@@ -32,6 +32,9 @@ helpers.getUserDataByUserSlug = function(userslug, callerUID, callback) {
 				isAdmin : function(next) {
 					user.isAdministrator(callerUID, next);
 				},
+				isGlobalModerator: function(next) {
+					user.isGlobalModerator(callerUID, next);
+				},
 				ips: function(next) {
 					user.getIPs(uid, 4, next);
 				},
@@ -54,23 +57,26 @@ helpers.getUserDataByUserSlug = function(userslug, callerUID, callback) {
 			var userData = results.userData;
 			var userSettings = results.userSettings;
 			var isAdmin = results.isAdmin;
-			var self = parseInt(callerUID, 10) === parseInt(userData.uid, 10);
+			var isGlobalModerator = results.isGlobalModerator;
+			var isSelf = parseInt(callerUID, 10) === parseInt(userData.uid, 10);
 
 			userData.joindateISO = utils.toISOString(userData.joindate);
 			userData.lastonlineISO = utils.toISOString(userData.lastonline || userData.joindate);
 			userData.age = Math.max(0, userData.birthday ? Math.floor((new Date().getTime() - new Date(userData.birthday).getTime()) / 31536000000) : 0);
 
-			if (!(isAdmin || self || (userData.email && userSettings.showemail))) {
+			userData.emailClass = 'hide';
+
+			if (!(isAdmin || isGlobalModerator || isSelf || (userData.email && userSettings.showemail))) {
 				userData.email = '';
+			} else if (!userSettings.showemail) {
+				userData.emailClass = '';
 			}
 
-			userData.emailClass = (self && !userSettings.showemail) ? '' : 'hide';
-
-			if (!self && !userSettings.showfullname) {
+			if (!isAdmin && !isGlobalModerator && !isSelf && !userSettings.showfullname) {
 				userData.fullname = '';
 			}
 
-			if (isAdmin || self) {
+			if (isAdmin || isGlobalModerator || isSelf) {
 				userData.ips = results.ips;
 			}
 
@@ -78,26 +84,30 @@ helpers.getUserDataByUserSlug = function(userslug, callerUID, callback) {
 			userData.yourid = callerUID;
 			userData.theirid = userData.uid;
 			userData.isAdmin = isAdmin;
-			userData.isSelf = self;
-			userData.showHidden = self || isAdmin;
+			userData.isGlobalModerator = isGlobalModerator;
+			userData.canBan = isAdmin || isGlobalModerator;
+			userData.canChangePassword = isAdmin || (isSelf && parseInt(meta.config['password:disableEdit'], 10) !== 1);
+			userData.isSelf = isSelf;
+			userData.showHidden = isSelf || isAdmin || isGlobalModerator;
 			userData.groups = Array.isArray(results.groups) && results.groups.length ? results.groups[0] : [];
 			userData.disableSignatures = meta.config.disableSignatures !== undefined && parseInt(meta.config.disableSignatures, 10) === 1;
+			userData['reputation:disabled'] = parseInt(meta.config['reputation:disabled'], 10) === 1;
+			userData['downvote:disabled'] = parseInt(meta.config['downvote:disabled'], 10) === 1;
 			userData['email:confirmed'] = !!parseInt(userData['email:confirmed'], 10);
-			userData.profile_links = filterLinks(results.profile_links, self);
+			userData.profile_links = filterLinks(results.profile_links, isSelf);
 			userData.sso = results.sso.associations;
 			userData.status = user.getStatus(userData);
 			userData.banned = parseInt(userData.banned, 10) === 1;
-			userData.website = validator.escape(userData.website);
+			userData.website = validator.escape(userData.website || '');
 			userData.websiteLink = !userData.website.startsWith('http') ? 'http://' + userData.website : userData.website;
 			userData.websiteName = userData.website.replace(validator.escape('http://'), '').replace(validator.escape('https://'), '');
 			userData.followingCount = parseInt(userData.followingCount, 10) || 0;
 			userData.followerCount = parseInt(userData.followerCount, 10) || 0;
 
-			userData.username = validator.escape(userData.username);
-			userData.email = validator.escape(userData.email);
-			userData.fullname = validator.escape(userData.fullname);
-			userData.location = validator.escape(userData.location);
-			userData.signature = validator.escape(userData.signature);
+			userData.email = validator.escape(userData.email || '');
+			userData.fullname = validator.escape(userData.fullname || '');
+			userData.location = validator.escape(userData.location || '');
+			userData.signature = validator.escape(userData.signature || '');
 			userData.aboutme = validator.escape(userData.aboutme || '');
 
 			userData['cover:url'] = userData['cover:url'] || require('../../coverPhoto').getDefaultProfileCover(userData.uid);
@@ -123,10 +133,13 @@ helpers.getBaseUser = function(userslug, callerUID, callback) {
 
 			async.parallel({
 				user: function(next) {
-					user.getUserFields(uid, ['uid', 'username', 'userslug', 'picture', 'cover:url', 'cover:position', 'status', 'lastonline'], next);
+					user.getUserFields(uid, ['uid', 'username', 'userslug', 'picture', 'cover:url', 'cover:position', 'status', 'lastonline', 'groupTitle'], next);
 				},
 				isAdmin: function(next) {
 					user.isAdministrator(callerUID, next);
+				},
+				isGlobalModerator: function(next) {
+					user.isGlobalModerator(callerUID, next);
 				},
 				profile_links: function(next) {
 					plugins.fireHook('filter:user.profileLinks', [], next);
@@ -142,9 +155,11 @@ helpers.getBaseUser = function(userslug, callerUID, callback) {
 			results.user.theirid = results.user.uid;
 			results.user.status = user.getStatus(results.user);
 			results.user.isSelf = parseInt(callerUID, 10) === parseInt(results.user.uid, 10);
-			results.user.showHidden = results.user.isSelf || results.isAdmin;
+			results.user.showHidden = results.user.isSelf || results.isAdmin || results.isGlobalModerator;
 			results.user.profile_links = filterLinks(results.profile_links, results.user.isSelf);
 
+			results.user['reputation:disabled'] = parseInt(meta.config['reputation:disabled'], 10) === 1;
+			results.user['downvote:disabled'] = parseInt(meta.config['downvote:disabled'], 10) === 1;
 			results.user['cover:url'] = results.user['cover:url'] || require('../../coverPhoto').getDefaultProfileCover(results.user.uid);
 			results.user['cover:position'] = results.user['cover:position'] || '50% 50%';
 

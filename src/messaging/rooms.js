@@ -101,18 +101,28 @@ module.exports = function(Messaging) {
 			},
 			function (results, next) {
 				if (!results.isOwner) {
-					return next(new Error('[[error:cant-remove-users-to-chat-room]]'));
+					return next(new Error('[[error:cant-remove-users-from-chat-room]]'));
 				}
 				if (results.userCount === 2) {
 					return next(new Error('[[error:cant-remove-last-user]]'));
 				}
+				Messaging.leaveRoom(uids, roomId, next);
+			}
+		], callback);
+	};
 
+	Messaging.leaveRoom = function(uids, roomId, callback) {
+		async.waterfall([
+			function (next) {
 				db.sortedSetRemove('chat:room:' + roomId + ':uids', uids, next);
 			},
 			function (next) {
 				var keys = uids.map(function(uid) {
 					return 'uid:' + uid + ':chat:rooms';
 				});
+				keys.concat(uids.map(function(uid) {
+					return 'uid:' + uid + ':chat:rooms:unread';
+				}));
 				db.sortedSetsRemove(keys, roomId, next);
 			}
 		], callback);
@@ -137,7 +147,10 @@ module.exports = function(Messaging) {
 		if (!newName) {
 			return callback(new Error('[[error:invalid-name]]'));
 		}
-
+		newName = newName.trim();
+		if (newName.length > 75) {
+			return callback(new Error('[[error:chat-room-name-too-long]]'));
+		}
 		async.waterfall([
 			function (next) {
 				Messaging.isRoomOwner(uid, roomId, next);

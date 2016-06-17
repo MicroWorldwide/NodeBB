@@ -53,11 +53,11 @@ define('admin/settings', ['uploader', 'sounds'], function(uploader, sounds) {
 					}
 				}
 			} else if (field.is('textarea')) {
-				if (app.config[key]) {
+				if (app.config.hasOwnProperty(key)) {
 					field.val(app.config[key]);
 				}
 			} else if (field.is('select')) {
-				if (app.config[key]) {
+				if (app.config.hasOwnProperty(key)) {
 					field.val(app.config[key]);
 				}
 			}
@@ -111,12 +111,19 @@ define('admin/settings', ['uploader', 'sounds'], function(uploader, sounds) {
 			var uploadBtn = $(this);
 			uploadBtn.on('click', function() {
 				uploader.show({
+					title: uploadBtn.attr('data-title'),
+					description: uploadBtn.attr('data-description'),
 					route: uploadBtn.attr('data-route'),
 					params: {},
-					fileSize: 0,
-					showHelp: uploadBtn.attr('data-help') ? uploadBtn.attr('data-help') === 1 : undefined
+					showHelp: uploadBtn.attr('data-help') ? uploadBtn.attr('data-help') === 1 : undefined,
+					accept: uploadBtn.attr('data-accept')
 				}, function(image) {
-					$('#' + uploadBtn.attr('data-target')).val(image);
+					// need to move these into template, ex data-callback
+					if (ajaxify.currentPage === 'admin/general/sounds') {
+						ajaxify.refresh();
+					} else {
+						$('#' + uploadBtn.attr('data-target')).val(image);
+					}
 				});
 			});
 		});

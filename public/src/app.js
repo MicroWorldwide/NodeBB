@@ -1,5 +1,5 @@
 "use strict";
-/*global templates, translator, ajaxify, utils, bootbox, overrides, socket, config, Visibility*/
+/*global templates, ajaxify, utils, bootbox, overrides, socket, config, Visibility*/
 
 var app = app || {};
 
@@ -24,63 +24,65 @@ app.cacheBuster = null;
 	});
 
 	app.load = function() {
-		$('document').ready(function () {
-			var url = ajaxify.start(window.location.pathname.slice(1) + window.location.search, true);
-			ajaxify.end(url, app.template);
+		app.loadProgressiveStylesheet();
 
-			handleStatusChange();
+		var url = ajaxify.start(window.location.pathname.slice(1) + window.location.search + window.location.hash, true);
+		ajaxify.end(url, app.template);
 
-			if (config.searchEnabled) {
-				app.handleSearch();
+		handleStatusChange();
+
+		if (config.searchEnabled) {
+			app.handleSearch();
+		}
+
+		$('#content').on('click', '#new_topic', function(){
+			app.newTopic();
+		});
+
+		require(['components'], function(components) {
+			components.get('user/logout').on('click', app.logout);
+		});
+
+		Visibility.change(function(e, state){
+			if (state === 'visible') {
+				app.isFocused = true;
+				app.alternatingTitle('');
+			} else if (state === 'hidden') {
+				app.isFocused = false;
 			}
+		});
 
-			handleNewTopic();
+		overrides.overrideBootbox();
+		overrides.overrideTimeago();
+		createHeaderTooltips();
+		app.showEmailConfirmWarning();
 
-			require(['components'], function(components) {
-				components.get('user/logout').on('click', app.logout);
-			});
+		socket.removeAllListeners('event:nodebb.ready');
+		socket.on('event:nodebb.ready', function(data) {
+			if (!app.cacheBusters || app.cacheBusters['cache-buster'] !== data['cache-buster']) {
+				app.cacheBusters = data;
 
-			Visibility.change(function(e, state){
-				if (state === 'visible') {
-					app.isFocused = true;
-					app.alternatingTitle('');
-				} else if (state === 'hidden') {
-					app.isFocused = false;
-				}
-			});
+				app.alert({
+					alert_id: 'forum_updated',
+					title: '[[global:updated.title]]',
+					message: '[[global:updated.message]]',
+					clickfn: function() {
+						window.location.reload();
+					},
+					type: 'warning'
+				});
+			}
+		});
 
-			overrides.overrideBootbox();
-			overrides.overrideTimeago();
-			createHeaderTooltips();
-			app.showEmailConfirmWarning();
+		require(['taskbar', 'helpers', 'forum/pagination'], function(taskbar, helpers, pagination) {
+			taskbar.init();
 
-			socket.removeAllListeners('event:nodebb.ready');
-			socket.on('event:nodebb.ready', function(data) {
-				if (!app.cacheBusters || app.cacheBusters['cache-buster'] !== data['cache-buster']) {
-					app.cacheBusters = data;
+			// templates.js helpers
+			helpers.register();
 
-					app.alert({
-						alert_id: 'forum_updated',
-						title: '[[global:updated.title]]',
-						message: '[[global:updated.message]]',
-						clickfn: function() {
-							window.location.reload();
-						},
-						type: 'warning'
-					});
-				}
-			});
+			pagination.init();
 
-			require(['taskbar', 'helpers', 'forum/pagination'], function(taskbar, helpers, pagination) {
-				taskbar.init();
-
-				// templates.js helpers
-				helpers.register();
-
-				pagination.init();
-
-				$(window).trigger('action:app.load');
-			});
+			$(window).trigger('action:app.load');
 		});
 	};
 
@@ -115,7 +117,7 @@ app.cacheBuster = null;
 			title: '[[global:alert.success]]',
 			message: message,
 			type: 'success',
-			timeout: timeout ? timeout : 2000
+			timeout: timeout ? timeout : 5000
 		});
 	};
 
@@ -124,26 +126,23 @@ app.cacheBuster = null;
 			title: '[[global:alert.error]]',
 			message: message,
 			type: 'danger',
-			timeout: timeout ? timeout : 5000
+			timeout: timeout ? timeout : 10000
 		});
 	};
 
 	app.enterRoom = function (room, callback) {
 		callback = callback || function() {};
 		if (socket && app.user.uid && app.currentRoom !== room) {
+			var previousRoom = app.currentRoom;
+			app.currentRoom = room;
 			socket.emit('meta.rooms.enter', {
-				enter: room,
-				username: app.user.username,
-				userslug: app.user.userslug,
-				picture: app.user.picture,
-				status: app.user.status,
-				'icon:bgColor': app.user['icon:bgColor'],
-				'icon:text': app.user['icon:text']
+				enter: room
 			}, function(err) {
 				if (err) {
+					app.currentRoom = previousRoom;
 					return app.alertError(err.message);
 				}
-				app.currentRoom = room;
+
 				callback();
 			});
 		}
@@ -171,7 +170,7 @@ app.cacheBuster = null;
 
 	app.createUserTooltips = function(els) {
 		els = els || $('body');
-		els.find('img[title].teaser-pic,img[title].user-img,div.user-icon,span.user-icon').each(function() {
+		els.find('.avatar,img[title].teaser-pic,img[title].user-img,div.user-icon,span.user-icon').each(function() {
 			if (!utils.isTouchDevice()) {
 				$(this).tooltip({
 					placement: 'top',
@@ -276,7 +275,11 @@ app.cacheBuster = null;
 			if (err) {
 				return app.alertError(err.message);
 			}
-			app.openChat(roomId);
+			if (!ajaxify.currentPage.startsWith('chats')) {
+				app.openChat(roomId);
+			} else {
+				ajaxify.go('chats/' + roomId);
+			}
 		});
 	};
 
@@ -326,7 +329,10 @@ app.cacheBuster = null;
 			return;
 		}
 		require(['translator'], function(translator) {
-			title = config.titleLayout.replace(/&#123;/g, '{').replace(/&#125;/g, '}').replace('{pageTitle}', title).replace('{browserTitle}', config.browserTitle);
+			title = config.titleLayout.replace(/&#123;/g, '{').replace(/&#125;/g, '}')
+				.replace('{pageTitle}', function() { return title; })
+				.replace('{browserTitle}', function() { return config.browserTitle; });
+
 			translator.translate(title, function(translated) {
 				titleObj.titles[0] = translated;
 				app.alternatingTitle('');
@@ -451,30 +457,11 @@ app.cacheBuster = null;
 		});
 	};
 
-	function handleNewTopic() {
-		$('#content').on('click', '#new_topic', function() {
-			var cid = ajaxify.data.cid;
-			if (cid) {
-				$(window).trigger('action:composer.topic.new', {
-					cid: cid
-				});
-			} else {
-				socket.emit('categories.getCategoriesByPrivilege', 'topics:create', function(err, categories) {
-					if (err) {
-						return app.alertError(err.message);
-					}
-					categories = categories.filter(function(category) {
-						return !category.link && !parseInt(category.parentCid, 10);
-					});
-					if (categories.length) {
-						$(window).trigger('action:composer.topic.new', {
-							cid: categories[0].cid
-						});
-					}
-				});
-			}
+	app.newTopic = function (cid) {
+		$(window).trigger('action:composer.topic.new', {
+			cid: cid || ajaxify.data.cid || 0
 		});
-	}
+	};
 
 	app.loadJQueryUI = function(callback) {
 		if (typeof $().autocomplete === 'function') {
@@ -519,19 +506,31 @@ app.cacheBuster = null;
 	};
 
 	app.parseAndTranslate = function(template, blockName, data, callback) {
-		if (typeof blockName === 'string') {
-			templates.parse(template, blockName, data, function(html) {
-				translator.translate(html, function(translatedHTML) {
-					callback($(translatedHTML));
+		require(['translator'], function(translator) {
+			if (typeof blockName === 'string') {
+				templates.parse(template, blockName, data, function(html) {
+					translator.translate(html, function(translatedHTML) {
+						translatedHTML = translator.unescape(translatedHTML);
+						callback($(translatedHTML));
+					});
 				});
-			});
-		} else {
-			callback = data, data = blockName;
-			templates.parse(template, data, function(html) {
-				translator.translate(html, function(translatedHTML) {
-					callback($(translatedHTML));
+			} else {
+				callback = data, data = blockName;
+				templates.parse(template, data, function(html) {
+					translator.translate(html, function(translatedHTML) {
+						translatedHTML = translator.unescape(translatedHTML);
+						callback($(translatedHTML));
+					});
 				});
-			});
-		}
+			}
+		});
+	};
+
+	app.loadProgressiveStylesheet = function() {
+		var linkEl = document.createElement('link');
+		linkEl.rel = 'stylesheet';
+		linkEl.href = config.relative_path + '/js-enabled.css';
+
+		document.head.appendChild(linkEl);
 	};
 }());

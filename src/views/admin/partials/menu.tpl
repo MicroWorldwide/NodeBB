@@ -7,6 +7,7 @@
 			<li><a href="{relative_path}/admin/general/navigation">Navigation</a></li>
 			<li><a href="{relative_path}/admin/general/languages">Languages</a></li>
 			<li><a href="{relative_path}/admin/general/sounds">Sounds</a></li>
+			<li><a href="{relative_path}/admin/general/social">Social</a></li>
 		</ul>
 	</section>
 
@@ -15,10 +16,11 @@
 		<ul class="menu-section-list">
 			<li><a href="{relative_path}/admin/manage/categories">Categories</a></li>
 			<li><a href="{relative_path}/admin/manage/tags">Tags</a></li>
-			<li><a href="{relative_path}/admin/manage/users">Users</a></li>
+			<li><a href="{relative_path}/admin/manage/users/latest">Users</a></li>
 			<li><a href="{relative_path}/admin/manage/registration">Registration Queue</a></li>
 			<li><a href="{relative_path}/admin/manage/groups">Groups</a></li>
 			<li><a href="{relative_path}/admin/manage/flags">Flags</a></li>
+			<li><a href="{relative_path}/admin/manage/ip-blacklist">IP Blacklist</a></li>
 		</ul>
 	</section>
 
@@ -31,6 +33,7 @@
 			<li><a href="{relative_path}/admin/settings/user">User</a></li>
 			<li><a href="{relative_path}/admin/settings/group">Group</a></li>
 			<li><a href="{relative_path}/admin/settings/guest">Guests</a></li>
+			<li><a href="{relative_path}/admin/settings/uploads">Uploads</a></li>
 			<li><a href="{relative_path}/admin/settings/post">Post</a></li>
 			<li><a href="{relative_path}/admin/settings/chat">Chat</a></li>
 			<li><a href="{relative_path}/admin/settings/pagination">Pagination</a></li>
@@ -92,6 +95,7 @@
 			<li><a href="{relative_path}/admin/advanced/database">Database</a></li>
 			<li><a href="{relative_path}/admin/advanced/events">Events</a></li>
 			<li><a href="{relative_path}/admin/advanced/logs">Logs</a></li>
+			<li><a href="{relative_path}/admin/advanced/errors">Errors</a></li>
 			<li><a href="{relative_path}/admin/advanced/post-cache">Post Cache</a></li>
 			<!-- IF env -->
 			<li><a href="{relative_path}/admin/development/logger">Logger</a></li>
@@ -118,7 +122,7 @@
 				</a>
 				<ul id="user-control-list" class="dropdown-menu" aria-labelledby="user_dropdown">
 					<li>
-						<a href="{relative_path}/" target="_blank" title="View Forum">
+						<a href="{relative_path}/" target="_top" title="View Forum">
 							View Forum
 						</a>
 					</li>
@@ -159,6 +163,7 @@
 					<li><a href="{relative_path}/admin/general/navigation">Navigation</a></li>
 					<li><a href="{relative_path}/admin/general/languages">Languages</a></li>
 					<li><a href="{relative_path}/admin/general/sounds">Sounds</a></li>
+					<li><a href="{relative_path}/admin/general/social">Social</a></li>
 				</ul>
 			</li>
 			<li class="dropdown menu-item">
@@ -166,10 +171,11 @@
 				<ul class="dropdown-menu" role="menu">
 					<li><a href="{relative_path}/admin/manage/categories">Categories</a></li>
 					<li><a href="{relative_path}/admin/manage/tags">Tags</a></li>
-					<li><a href="{relative_path}/admin/manage/users">Users</a></li>
+					<li><a href="{relative_path}/admin/manage/users/latest">Users</a></li>
 					<li><a href="{relative_path}/admin/manage/registration">Registration Queue</a></li>
 					<li><a href="{relative_path}/admin/manage/groups">Groups</a></li>
 					<li><a href="{relative_path}/admin/manage/flags">Flags</a></li>
+					<li><a href="{relative_path}/admin/manage/ip-blacklist">IP Blacklist</a></li>
 				</ul>
 			</li>
 			<li class="dropdown menu-item">
@@ -181,6 +187,7 @@
 					<li><a href="{relative_path}/admin/settings/user">User</a></li>
 					<li><a href="{relative_path}/admin/settings/group">Group</a></li>
 					<li><a href="{relative_path}/admin/settings/guest">Guests</a></li>
+					<li><a href="{relative_path}/admin/settings/uploads">Uploads</a></li>
 					<li><a href="{relative_path}/admin/settings/post">Post</a></li>
 					<li><a href="{relative_path}/admin/settings/chat">Chat</a></li>
 					<li><a href="{relative_path}/admin/settings/pagination">Pagination</a></li>
@@ -241,11 +248,20 @@
 					<li><a href="{relative_path}/admin/advanced/database">Database</a></li>
 					<li><a href="{relative_path}/admin/advanced/events">Events</a></li>
 					<li><a href="{relative_path}/admin/advanced/logs">Logs</a></li>
+					<li><a href="{relative_path}/admin/advanced/errors">Errors</a></li>
 					<li><a href="{relative_path}/admin/advanced/post-cache">Post Cache</a></li>
 					<!-- IF env -->
 					<li><a href="{relative_path}/admin/development/logger">Logger</a></li>
 					<!-- ENDIF env -->
 				</ul>
+			</li>
+		</ul>
+
+		<ul class="nav navbar-nav navbar-right hidden-xs reconnect-spinner">
+			<li>
+				<a href="#" id="reconnect" class="hide" title="Connection to {title} has been lost, attempting to reconnect...">
+					<i class="fa fa-check"></i>
+				</a>
 			</li>
 		</ul>
 	</nav>

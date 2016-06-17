@@ -1,5 +1,5 @@
 {
-    "latest_users": "Meest recente gebruikers",
+    "latest_users": "Laatste gebruikers",
     "top_posters": "Meest actieve leden",
     "most_reputation": "Meeste reputatie",
     "search": "Zoeken",
@@ -8,7 +8,6 @@
     "users-found-search-took": "%1 gebruiker(s) gevonden! Zoekactie duurde %2 seconden.",
     "filter-by": "Filter op",
     "online-only": "Online ",
-    "picture-only": "Alleen een afbeelding",
     "invite": "Uitnodigen",
     "invitation-email-sent": "Een uitnodiging email is verstuurd naar %1 ",
     "user_list": "Ledenlijst",
@@ -17,5 +16,5 @@
     "unread_topics": "Ongelezen onderwerpen",
     "categories": "Categorieën",
     "tags": "Tags",
-    "map": "Map"
+    "no-users-found": "Geen gebruikers gevonden!"
 }

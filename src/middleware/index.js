@@ -14,6 +14,7 @@ var meta = require('../meta'),
 	compression = require('compression'),
 	favicon = require('serve-favicon'),
 	session = require('express-session'),
+	cls = require('./cls'),
 	useragent = require('express-useragent');
 
 
@@ -61,6 +62,10 @@ module.exports = function(app) {
 	if (nconf.get('secure')) {
 		cookie.secure = true;
 	}
+	
+	if (relativePath !== '') {
+		cookie.path = relativePath;
+	}
 
 	app.use(session({
 		store: db.sessionStore,
@@ -71,19 +76,9 @@ module.exports = function(app) {
 		saveUninitialized: true
 	}));
 
-	app.use(function (req, res, next) {
-		res.setHeader('X-Powered-By', 'NodeBB');
-
-		if (meta.config['allow-from-uri']) {
-			res.setHeader('X-Frame-Options', 'ALLOW-FROM ' + meta.config['allow-from-uri']);
-		} else {
-			res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-		}
-
-		next();
-	});
-
+	app.use(middleware.addHeaders);
 	app.use(middleware.processRender);
+	app.use(cls.http);
 	auth.initialize(app, middleware);
 
 	return middleware;

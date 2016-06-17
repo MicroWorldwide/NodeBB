@@ -1,19 +1,14 @@
 
 'use strict';
 
-var async = require('async'),
-	nconf = require('nconf'),
-	winston = require('winston'),
-	S = require('string'),
+var async = require('async');
+var winston = require('winston');
+var S = require('string');
 
-	user = require('../user'),
-	db = require('../database'),
-	meta = require('../meta'),
-	notifications = require('../notifications'),
-	posts = require('../posts'),
-	topics = require('../topics'),
-	privileges = require('../privileges'),
-	utils = require('../../public/src/utils');
+var db = require('../database');
+var meta = require('../meta');
+var notifications = require('../notifications');
+var privileges = require('../privileges');
 
 (function(UserNotifications) {
 
@@ -103,87 +98,18 @@ var async = require('async'),
 			if (err) {
 				return callback(err);
 			}
-
-			UserNotifications.generateNotificationPaths(notifications, uid, callback);
-		});
-	};
-
-	UserNotifications.generateNotificationPaths = function (notifications, uid, callback) {
-		var pids = notifications.map(function(notification) {
-			return notification ? notification.pid : null;
-		});
-
-		generatePostPaths(pids, uid, function(err, pidToPaths) {
-			if (err) {
-				return callback(err);
-			}
-
-			notifications = notifications.map(function(notification, index) {
-				if (!notification) {
-					return null;
-				}
-
-				notification.path = pidToPaths[notification.pid] || notification.path || '';
-
-				if (notification.nid.startsWith('follow')) {
-					notification.path = '/user/' + notification.user.userslug;
-				}
-
-				notification.datetimeISO = utils.toISOString(notification.datetime);
-				return notification;
+			notifications = notifications.filter(function(notification) {
+				return notification && notification.path;
 			});
-
 			callback(null, notifications);
 		});
 	};
 
-	function generatePostPaths(pids, uid, callback) {
-		pids = pids.filter(Boolean);
-		var postKeys = pids.map(function(pid) {
-			return 'post:' + pid;
-		});
-
-		db.getObjectsFields(postKeys, ['pid', 'tid'], function(err, postData) {
-			if (err) {
-				return callback(err);
-			}
-
-			var topicKeys = postData.map(function(post) {
-				return post ? 'topic:' + post.tid : null;
-			});
-
-			async.parallel({
-				indices: function(next) {
-					posts.getPostIndices(postData, uid, next);
-				},
-				topics: function(next) {
-					db.getObjectsFields(topicKeys, ['slug'], next);
-				}
-			}, function(err, results) {
-				if (err) {
-					return callback(err);
-				}
-
-				var pidToPaths = {};
-				pids.forEach(function(pid, index) {
-					var slug = results.topics[index] ? results.topics[index].slug : null;
-					var postIndex = utils.isNumber(results.indices[index]) ? parseInt(results.indices[index], 10) + 1 : null;
-
-					if (slug && postIndex) {
-						pidToPaths[pid] = '/topic/' + slug + '/' + postIndex;
-					}
-				});
-
-				callback(null, pidToPaths);
-			});
-		});
-	}
 
 	UserNotifications.getDailyUnread = function(uid, callback) {
-		var	now = Date.now(),
-			yesterday = now - (1000*60*60*24);	// Approximate, can be more or less depending on time changes, makes no difference really.
+		var yesterday = Date.now() - (1000 * 60 * 60 * 24);	// Approximate, can be more or less depending on time changes, makes no difference really.
 
-		db.getSortedSetRevRangeByScore('uid:' + uid + ':notifications:unread', 0, 20, now, yesterday, function(err, nids) {
+		db.getSortedSetRevRangeByScore('uid:' + uid + ':notifications:unread', 0, 20, '+inf', yesterday, function(err, nids) {
 			if (err) {
 				return callback(err);
 			}
@@ -200,8 +126,31 @@ var async = require('async'),
 		if (!parseInt(uid, 10)) {
 			return callback(null, 0);
 		}
-		db.getSortedSetRevRange('uid:' + uid + ':notifications:unread', 0, 20, function(err, nids) {
-			callback(err, Array.isArray(nids) ? nids.length : 0);
+
+		// Collapse any notifications with identical mergeIds
+		async.waterfall([
+			async.apply(db.getSortedSetRevRange, 'uid:' + uid + ':notifications:unread', 0, 99),
+			async.apply(notifications.filterExists),
+			function(nids, next) {
+				var keys = nids.map(function(nid) {
+					return 'notifications:' + nid;
+				});
+
+				db.getObjectsFields(keys, ['mergeId'], next);
+			}
+		], function(err, mergeIds) {
+			// A missing (null) mergeId means that notification is counted separately.
+			mergeIds = mergeIds.map(function(set) {
+				return set.mergeId;
+			});
+
+			callback(err, mergeIds.reduce(function(count, cur, idx, arr) {
+				if (cur === null || idx === arr.indexOf(cur)) {
+					++count;
+				}
+
+				return count;
+			}, 0));
 		});
 	};
 
@@ -251,13 +200,20 @@ var async = require('async'),
 	};
 
 	UserNotifications.sendTopicNotificationToFollowers = function(uid, topicData, postData) {
-		db.getSortedSetRange('followers:' + uid, 0, -1, function(err, followers) {
-			if (err || !Array.isArray(followers) || !followers.length) {
-				return;
-			}
-
-			privileges.categories.filterUids('read', topicData.cid, followers, function(err, followers) {
-				if (err || !followers.length) {
+		var followers;
+		async.waterfall([
+			function (next) {
+				db.getSortedSetRange('followers:' + uid, 0, -1, next);
+			},
+			function (followers, next) {
+				if (!Array.isArray(followers) || !followers.length) {
+					return;
+				}
+				privileges.categories.filterUids('read', topicData.cid, followers, next);
+			},
+			function (_followers, next) {
+				followers = _followers;
+				if (!followers.length) {
 					return;
 				}
 
@@ -270,15 +226,20 @@ var async = require('async'),
 					bodyShort: '[[notifications:user_posted_topic, ' + postData.user.username + ', ' + title + ']]',
 					bodyLong: postData.content,
 					pid: postData.pid,
+					path: '/post/' + postData.pid,
 					nid: 'tid:' + postData.tid + ':uid:' + uid,
 					tid: postData.tid,
 					from: uid
-				}, function(err, notification) {
-					if (!err && notification) {
-						notifications.push(notification, followers);
-					}
-				});
-			});
+				}, next);
+			}
+		], function(err, notification) {
+			if (err) {
+				return winston.error(err);
+			}
+
+			if (notification) {
+				notifications.push(notification, followers);
+			}
 		});
 	};
 
@@ -295,14 +256,11 @@ var async = require('async'),
 			path: path,
 			nid: 'welcome_' + uid
 		}, function(err, notification) {
-			if (err) {
+			if (err || !notification) {
 				return callback(err);
 			}
-			if (notification) {
-				notifications.push(notification, [uid], callback);
-			} else {
-				callback();
-			}
+
+			notifications.push(notification, [uid], callback);
 		});
 	};
 

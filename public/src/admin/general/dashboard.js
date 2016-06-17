@@ -1,13 +1,14 @@
 "use strict";
-/*global define, ajaxify, app, socket, utils, bootbox, Chart, RELATIVE_PATH*/
+/*global define, ajaxify, app, socket, utils, bootbox, RELATIVE_PATH*/
 
-define('admin/general/dashboard', ['semver'], function(semver) {
+define('admin/general/dashboard', ['semver', 'Chart'], function(semver, Chart) {
 	var	Admin = {},
 		intervals = {
 			rooms: false,
 			graphs: false
 		},
 		isMobile = false,
+		isPrerelease = /^v?\d+\.\d+\.\d+-.+$/,
 		graphData = {
 			rooms: {},
 			traffic: {}
@@ -22,7 +23,17 @@ define('admin/general/dashboard', ['semver'], function(semver) {
 		graphInterval: 15000,
 		realtimeInterval: 1500
 	};
+	
+	$(window).on('action:ajaxify.start', function(ev, data) {
+		clearInterval(intervals.rooms);
+		clearInterval(intervals.graphs);
 
+		intervals.rooms = null;
+		intervals.graphs = null;
+		graphData.rooms = null;
+		graphData.traffic = null;
+		usedTopicColors.length = 0;
+	});
 
 	Admin.init = function() {
 		app.enterRoom('admin');
@@ -30,37 +41,34 @@ define('admin/general/dashboard', ['semver'], function(semver) {
 
 		isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-		$(window).on('action:ajaxify.start', function(ev, data) {
-			clearInterval(intervals.rooms);
-			clearInterval(intervals.graphs);
-
-			intervals.rooms = null;
-			intervals.graphs = null;
-			graphData.rooms = null;
-			graphData.traffic = null;
-			usedTopicColors.length = 0;
-		});
-
 		$.get('https://api.github.com/repos/NodeBB/NodeBB/tags', function(releases) {
 			// Re-sort the releases, as they do not follow Semver (wrt pre-releases)
 			releases = releases.sort(function(a, b) {
 				a = a.name.replace(/^v/, '');
 				b = b.name.replace(/^v/, '');
 				return semver.lt(a, b) ? 1 : -1;
+			}).filter(function(version) {
+				return !isPrerelease.test(version.name);	// filter out automated prerelease versions
 			});
 
 			var	version = $('#version').html(),
 				latestVersion = releases[0].name.slice(1),
 				checkEl = $('.version-check');
-			checkEl.html($('.version-check').html().replace('<i class="fa fa-spinner fa-spin"></i>', 'v' + latestVersion));
 
 			// Alter box colour accordingly
 			if (semver.eq(latestVersion, version)) {
 				checkEl.removeClass('alert-info').addClass('alert-success');
 				checkEl.append('<p>You are <strong>up-to-date</strong> <i class="fa fa-check"></i></p>');
 			} else if (semver.gt(latestVersion, version)) {
-				checkEl.removeClass('alert-info').addClass('alert-danger');
-				checkEl.append('<p>A new version (v' + latestVersion + ') has been released. Consider <a href="https://docs.nodebb.org/en/latest/upgrading/index.html">upgrading your NodeBB</a>.</p>');
+				checkEl.removeClass('alert-info').addClass('alert-warning');
+				if (!isPrerelease.test(version)) {
+					checkEl.append('<p>A new version (v' + latestVersion + ') has been released. Consider <a href="https://docs.nodebb.org/en/latest/upgrading/index.html">upgrading your NodeBB</a>.</p>');
+				} else {
+					checkEl.append('<p>This is an outdated pre-release version of NodeBB. A new version (v' + latestVersion + ') has been released. Consider <a href="https://docs.nodebb.org/en/latest/upgrading/index.html">upgrading your NodeBB</a>.</p>');
+				}
+			} else if (isPrerelease.test(version)) {
+				checkEl.removeClass('alert-info').addClass('alert-info');
+				checkEl.append('<p>This is a <strong>pre-release</strong> version of NodeBB. Unintended bugs may occur. <i class="fa fa-exclamation-triangle"></i>.</p>');
 			}
 		});
 
@@ -145,32 +153,6 @@ define('admin/general/dashboard', ['semver'], function(semver) {
 		return (usePound?"#":"") + (g | (b << 8) | (r << 16)).toString(16);
 	}
 
-	function getHoursArray() {
-		var currentHour = new Date().getHours(),
-			labels = [];
-
-		for (var i = currentHour, ii = currentHour - 24; i > ii; i--) {
-			var hour = i < 0 ? 24 + i : i;
-			labels.push(hour + ':00');
-		}
-
-		return labels.reverse();
-	}
-
-	function getDaysArray(from) {
-		var currentDay = new Date(from || Date.now()).getTime(),
-			months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-			labels = [],
-			tmpDate;
-
-		for(var x=29;x>=0;x--) {
-			tmpDate = new Date(currentDay - (1000*60*60*24*x));
-			labels.push(months[tmpDate.getMonth()] + ' ' + tmpDate.getDate());
-		}
-
-		return labels;
-	}
-
 	function setupGraphs() {
 		var trafficCanvas = document.getElementById('analytics-traffic'),
 			registeredCanvas = document.getElementById('analytics-registered'),
@@ -180,10 +162,11 @@ define('admin/general/dashboard', ['semver'], function(semver) {
 			registeredCtx = registeredCanvas.getContext('2d'),
 			presenceCtx = presenceCanvas.getContext('2d'),
 			topicsCtx = topicsCanvas.getContext('2d'),
-			trafficLabels = getHoursArray();
+			trafficLabels = utils.getHoursArray();
 
 		if (isMobile) {
 			Chart.defaults.global.showTooltips = false;
+			Chart.defaults.global.animation = false;
 		}
 
 		var data = {
@@ -212,7 +195,7 @@ define('admin/general/dashboard', ['semver'], function(semver) {
 				]
 			};
 
-		trafficCanvas.width = $(trafficCanvas).parent().width(); // is this necessary
+		trafficCanvas.width = $(trafficCanvas).parent().width();
 		graphs.traffic = new Chart(trafficCtx).Line(data, {
 			responsive: true
 		});
@@ -325,9 +308,9 @@ define('admin/general/dashboard', ['semver'], function(semver) {
 			}
 
 			if (units === 'days') {
-				graphs.traffic.scale.xLabels = getDaysArray(until);
+				graphs.traffic.scale.xLabels = utils.getDaysArray(until);
 			} else {
-				graphs.traffic.scale.xLabels = getHoursArray();
+				graphs.traffic.scale.xLabels = utils.getHoursArray();
 
 				$('#pageViewsThisMonth').html(data.monthlyPageViews.thisMonth);
 				$('#pageViewsLastMonth').html(data.monthlyPageViews.lastMonth);

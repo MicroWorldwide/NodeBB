@@ -2,14 +2,24 @@
 	"use strict";
 	/* globals RELATIVE_PATH, config, define */
 
+	var S = null;
+	var stringDefer = null;
+
 	// export the class if we are in a Node-like system.
 	if (typeof module === 'object' && module.exports === translator) {
 		exports = module.exports = translator;
+		S = require('string');
+	} else {
+		stringDefer = $.Deferred();
+		require(['string'], function(stringLib) {
+			S = stringLib;
+			stringDefer.resolve(S);
+		});
 	}
 
 	var	languages = {},
 		regexes = {
-			match: /\[\[\w+:.*?\]\]/g,
+			match: /\[\[\w+:[\w\.]+((?!\[\[).)*?\]\]/g,	// see tests/translator.js for an explanation re: this monster
 			split: /[,][\s]*/,
 			replace: /\]+$/
 		};
@@ -17,8 +27,18 @@
 	translator.addTranslation = function(language, filename, translations) {
 		languages[language] = languages[language] || {};
 		languages[language].loaded = languages[language].loaded || {};
-		languages[language].loaded[filename] = translations;
 		languages[language].loading = languages[language].loading || {};
+
+		if (languages[language].loaded[filename]) {
+			var existing = languages[language].loaded[filename];
+			for (var t in translations) {
+				if (translations.hasOwnProperty(t)) {
+					languages[language].loaded[filename][t] = translations[t];
+				}
+			}
+		} else {
+			languages[language].loaded[filename] = translations;
+		}
 	};
 
 	translator.getTranslations = function(language, filename, callback) {
@@ -50,10 +70,6 @@
 			case 'en_GB':
 			case 'en_US':
 				languageCode = 'en';
-				break;
-
-			case 'cs':
-				languageCode = 'cz';
 				break;
 
 			case 'fa_IR':
@@ -89,17 +105,6 @@
 			$.getScript(RELATIVE_PATH + '/vendor/jquery/timeago/locales/jquery.timeago.' + languageCode + '-short.js').success(function() {
 				// Switch back to long-form
 				translator.toggleTimeagoShorthand();
-			}).fail(function() {
-				$.getScript(RELATIVE_PATH + '/vendor/jquery/timeago/locales/jquery.timeago.en-short.js').success(function() {
-					// Switch back to long-form
-					translator.toggleTimeagoShorthand();
-				});
-			});
-		}).fail(function() {
-			$.getScript(RELATIVE_PATH + '/vendor/jquery/timeago/locales/jquery.timeago.en-short.js').success(function() {
-				// Switch back to long-form
-				translator.toggleTimeagoShorthand();
-				$.getScript(RELATIVE_PATH + '/vendor/jquery/timeago/locales/jquery.timeago.en.js');
 			});
 		});
 
@@ -138,7 +143,14 @@
 			return callback(text);
 		}
 
-		translateKeys(keys, text, language, callback);
+		translateKeys(keys, text, language, function(translated) {
+			keys = translated.match(regexes.match);
+			if (!keys) {
+				callback(translated);
+			} else {
+				translateKeys(keys, translated, language, callback);
+			}
+		});
 	};
 
 	function translateKeys(keys, text, language, callback) {
@@ -146,6 +158,12 @@
 		var count = keys.length;
 		if (!count) {
 			return callback(text);
+		}
+
+		if (S === null) { // browser environment and S not yet initialized
+			// we need to wait for async require call
+			stringDefer.then(function () { translateKeys(keys, text, language, callback); });
+			return;
 		}
 
 		var data = {text: text};
@@ -180,12 +198,14 @@
 
 	function insertLanguage(text, key, value, variables) {
 		if (value) {
-			for (var i = 1, ii = variables.length; i < ii; i++) {
-				var variable = variables[i].replace(']]', '');
-				value = value.replace('%' + i, variable);
-			}
+			variables.forEach(function(variable, index) {
+				if (index > 0) {
+					variable = S(variable).chompRight(']]').collapseWhitespace().decodeHTMLEntities().escapeHTML().s;
+					value = value.replace('%' + index, function() { return variable; });
+				}
+			});
 
-			text = text.replace(key, value);
+			text = text.replace(key, function() { return value; });
 		} else {
 			var string = key.split(':');
 			text = text.replace(key, string[string.length-1].replace(regexes.replace, ''));

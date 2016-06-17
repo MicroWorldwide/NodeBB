@@ -5,12 +5,7 @@
 				<!-- BEGIN navigation -->
 				<li data-index="{navigation.index}" class="{navigation.class} <!-- IF navigation.selected --> active <!-- ENDIF navigation.selected -->">
 					<a href="#" title="{navigation.route}" id="{navigation.id}">
-
 						<i class="fa fa-fw <!-- IF navigation.iconClass -->{navigation.iconClass}<!-- ENDIF navigation.iconClass -->"></i>
-
-						<!-- IF navigation.text -->
-						<span class="{navigation.textClass}">{navigation.text}</span>
-						<!-- ENDIF navigation.text -->
 					</a>
 				</li>
 				<!-- END navigation -->
@@ -73,6 +68,12 @@
 					</div>
 					<div class="checkbox">
 						<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
+							<input class="mdl-switch__input" type="checkbox" name="property:globalMod" <!-- IF enabled.properties.globalMod -->checked<!-- ENDIF enabled.properties.globalMod -->/>
+							<span class="mdl-switch__label"><strong>Only display to Global Moderators and Admins</strong></span>
+						</label>
+					</div>
+					<div class="checkbox">
+						<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
 							<input class="mdl-switch__input" type="checkbox" name="property:loggedIn" <!-- IF enabled.properties.loggedIn -->checked<!-- ENDIF enabled.properties.loggedIn -->/> <span class="mdl-switch__label"><strong>Only display to logged in users</strong></span>
 						</label>
 					</div>
@@ -80,6 +81,15 @@
 						<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
 							<input class="mdl-switch__input" type="checkbox" name="property:targetBlank" <!-- IF enabled.properties.targetBlank -->checked<!-- ENDIF enabled.properties.targetBlank -->/>
 							<span class="mdl-switch__label"><strong>Open in a new window</strong></span>
+						</label>
+					</div>
+
+					<strong>Installed Plugins Required:</strong>
+
+					<div class="checkbox">
+						<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect">
+							<input class="mdl-switch__input" type="checkbox" name="property:searchInstalled" <!-- IF enabled.properties.searchInstalled -->checked<!-- ENDIF enabled.properties.searchInstalled -->/>
+							<span class="mdl-switch__label"><strong>Search plugin</strong></span>
 						</label>
 					</div>
 

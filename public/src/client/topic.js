@@ -61,17 +61,17 @@ define('forum/topic', [
 
 		addParentHandler();
 
-		handleBookmark(tid);
-
 		handleKeys();
 
 		navigator.init('[component="post/anchor"]', ajaxify.data.postcount, Topic.toTop, Topic.toBottom, Topic.navigatorCallback, Topic.calculateIndex);
+
+		handleBookmark(tid);
 
 		$(window).on('scroll', updateTopicTitle);
 
 		handleTopicSearch();
 
-		$(window).trigger('action:topic.loaded');
+		$(window).trigger('action:topic.loaded', ajaxify.data);
 	};
 
 	function handleKeys() {
@@ -82,6 +82,9 @@ define('forum/topic', [
 
 	function onKeyDown(ev) {
 		if (ev.target.nodeName === 'BODY') {
+			if (ev.shiftKey || ev.ctrlKey || ev.altKey) {
+				return;
+			}
 			if (ev.which === 36) { // home key
 				Topic.toTop();
 				return false;
@@ -93,7 +96,7 @@ define('forum/topic', [
 	}
 
 	function handleTopicSearch() {
-		require(['search', 'mousetrap'], function(search, Mousetrap) {
+		require(['search', 'mousetrap'], function(search, mousetrap) {
 			$('.topic-search')
 				.on('click', '.prev', function() {
 					search.topicDOM.prev();
@@ -102,7 +105,7 @@ define('forum/topic', [
 					search.topicDOM.next();
 				});
 
-			Mousetrap.bind('ctrl+f', function(e) {
+			mousetrap.bind('ctrl+f', function(e) {
 				if (config.topicSearchEnabled) {
 					// If in topic, open search window and populate, otherwise regular behaviour
 					var match = ajaxify.currentPage.match(/^topic\/([\d]+)/),
@@ -140,7 +143,8 @@ define('forum/topic', [
 			if (components.get('post/anchor', postIndex).length) {
 				return navigator.scrollToPostIndex(postIndex, true);
 			}
-		} else if (bookmark && (!config.usePagination || (config.usePagination && ajaxify.data.pagination.currentPage === 1)) && ajaxify.data.postcount > 5) {
+		} else if (bookmark && (!config.usePagination || (config.usePagination && ajaxify.data.pagination.currentPage === 1)) && ajaxify.data.postcount > ajaxify.data.bookmarkThreshold) {
+			navigator.update(0);
 			app.alert({
 				alert_id: 'bookmark',
 				message: '[[topic:bookmark_instructions]]',
@@ -156,6 +160,8 @@ define('forum/topic', [
 			setTimeout(function() {
 				app.removeAlert('bookmark');
 			}, 10000);
+		} else {
+			navigator.update(0);
 		}
 	}
 
@@ -215,12 +221,15 @@ define('forum/topic', [
 	}
 
 	function updateTopicTitle() {
-		if ($(window).scrollTop() > 50) {
-			components.get('navbar/title').find('span').text(ajaxify.data.title).show();
-		} else {
-			components.get('navbar/title').find('span').text('').hide();
+		var span = components.get('navbar/title').find('span');
+		if ($(window).scrollTop() > 50 && span.hasClass('hidden')) {
+			span.html(ajaxify.data.title).removeClass('hidden');
+		} else if ($(window).scrollTop() <= 50 && !span.hasClass('hidden')) {
+			span.html('').addClass('hidden');
 		}
-		app.removeAlert('bookmark');
+		if ($(window).scrollTop() > 300) {
+			app.removeAlert('bookmark');
+		}
 	}
 
 	Topic.calculateIndex = function(index, elementCount) {
@@ -230,7 +239,7 @@ define('forum/topic', [
 		return index;
 	};
 
-	Topic.navigatorCallback = function(index, elementCount) {
+	Topic.navigatorCallback = function(index, elementCount, threshold) {
 		var path = ajaxify.removeRelativePath(window.location.pathname.slice(1));
 		if (!path.startsWith('topic')) {
 			return 1;
@@ -245,13 +254,13 @@ define('forum/topic', [
 				newUrl += '/' + index;
 			}
 
+			posts.loadImages(threshold);
+
 			if (newUrl !== currentUrl) {
 				if (Topic.replaceURLTimeout) {
 					clearTimeout(Topic.replaceURLTimeout);
 				}
-
 				Topic.replaceURLTimeout = setTimeout(function() {
-
 					updateUserBookmark(index);
 
 					Topic.replaceURLTimeout = 0;
@@ -271,7 +280,7 @@ define('forum/topic', [
 		var bookmarkKey = 'topic:' + ajaxify.data.tid + ':bookmark';
 		var currentBookmark = ajaxify.data.bookmark || localStorage.getItem(bookmarkKey);
 
-		if (ajaxify.data.postcount > 5 && (!currentBookmark || parseInt(index, 10) > parseInt(currentBookmark, 10))) {
+		if (ajaxify.data.postcount > ajaxify.data.bookmarkThreshold && (!currentBookmark || parseInt(index, 10) > parseInt(currentBookmark, 10))) {
 			if (app.user.uid) {
 				socket.emit('topics.bookmark', {
 					'tid': ajaxify.data.tid,

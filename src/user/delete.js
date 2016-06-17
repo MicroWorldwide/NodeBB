@@ -11,16 +11,16 @@ var async = require('async'),
 
 module.exports = function(User) {
 
-	User.delete = function(uid, callback) {
+	User.delete = function(callerUid, uid, callback) {
 		if (!parseInt(uid, 10)) {
 			return callback(new Error('[[error:invalid-uid]]'));
 		}
 		async.waterfall([
 			function(next) {
-				deletePosts(uid, next);
+				deletePosts(callerUid, uid, next);
 			},
 			function(next) {
-				deleteTopics(uid, next);
+				deleteTopics(callerUid, uid, next);
 			},
 			function(next) {
 				User.deleteAccount(uid, next);
@@ -28,17 +28,19 @@ module.exports = function(User) {
 		], callback);
 	};
 
-	function deletePosts(uid, callback) {
-		deleteSortedSetElements('uid:' + uid + ':posts', posts.purge, callback);
+	function deletePosts(callerUid, uid, callback) {
+		batch.processSortedSet('uid:' + uid + ':posts', function(ids, next) {
+			async.eachSeries(ids, function(pid, next) {
+				posts.purge(pid, callerUid, next);
+			}, next);
+		}, {alwaysStartAt: 0}, callback);
 	}
 
-	function deleteTopics(uid, callback) {
-		deleteSortedSetElements('uid:' + uid + ':topics', topics.purge, callback);
-	}
-
-	function deleteSortedSetElements(set, deleteMethod, callback) {
-		batch.processSortedSet(set, function(ids, next) {
-			async.eachLimit(ids, 10, deleteMethod, next);
+	function deleteTopics(callerUid, uid, callback) {
+		batch.processSortedSet('uid:' + uid + ':topics', function(ids, next) {
+			async.eachSeries(ids, function(tid, next) {
+				topics.purge(tid, callerUid, next);
+			}, next);
 		}, {alwaysStartAt: 0}, callback);
 	}
 
@@ -91,7 +93,8 @@ module.exports = function(User) {
 							'users:postcount',
 							'users:reputation',
 							'users:banned',
-							'users:online'
+							'users:online',
+							'users:notvalidated'
 						], uid, next);
 					},
 					function(next) {
@@ -99,8 +102,12 @@ module.exports = function(User) {
 					},
 					function(next) {
 						var keys = [
-							'uid:' + uid + ':notifications:read', 'uid:' + uid + ':notifications:unread',
-							'uid:' + uid + ':favourites', 'uid:' + uid + ':followed_tids', 'user:' + uid + ':settings',
+							'uid:' + uid + ':notifications:read',
+							'uid:' + uid + ':notifications:unread',
+							'uid:' + uid + ':favourites',
+							'uid:' + uid + ':followed_tids',
+							'uid:' + uid + ':ignored_tids',
+							'user:' + uid + ':settings',
 							'uid:' + uid + ':topics', 'uid:' + uid + ':posts',
 							'uid:' + uid + ':chats', 'uid:' + uid + ':chats:unread',
 							'uid:' + uid + ':chat:rooms', 'uid:' + uid + ':chat:rooms:unread',
@@ -118,10 +125,6 @@ module.exports = function(User) {
 					},
 					function(next) {
 						groups.leaveAllGroups(uid, next);
-					},
-					function(next) {
-						// Deprecated as of v0.7.4, remove in v1.0.0
-						plugins.fireHook('filter:user.delete', uid, next);
 					}
 				], next);
 			},
@@ -144,7 +147,7 @@ module.exports = function(User) {
 					return pid && array.indexOf(pid) === index;
 				});
 
-				async.eachLimit(pids, 50, function(pid, next) {
+				async.eachSeries(pids, function(pid, next) {
 					favourites.unvote(pid, uid, next);
 				}, next);
 			}

@@ -66,11 +66,9 @@
 				}
 			}
 		}
-
-		margin-bottom: 10px;
 	}
 
-	ol {
+	> ul, > ol {
 		margin-bottom: 10px;
 	}
 }
@@ -81,4 +79,9 @@
 	height: @size;
 	line-height: @size;
 	font-size: @font-size;
+}
+
+.box-shadow(@shadow) {
+	-webkit-box-shadow: @shadow;
+	box-shadow: @shadow;
 }

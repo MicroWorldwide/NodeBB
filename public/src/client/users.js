@@ -1,6 +1,6 @@
 'use strict';
 
-/* globals define, socket, app, ajaxify, templates */
+/* globals define, socket, app, templates, bootbox, ajaxify */
 
 define('forum/users', ['translator'], function(translator) {
 	var	Users = {};
@@ -31,20 +31,12 @@ define('forum/users', ['translator'], function(translator) {
 	};
 
 	function loadMoreUsers() {
-		var set = '';
-		var activeSection = getActiveSection();
-		if (activeSection === 'sort-posts') {
-			set = 'users:postcount';
-		} else if (activeSection === 'sort-reputation') {
-			set = 'users:reputation';
-		} else if (activeSection === 'online') {
-			set = 'users:online';
-		} else if (activeSection === 'users') {
-			set = 'users:joindate';
+		if ($('#search-user').val()) {
+			return;
 		}
 
-		if (set) {
-			startLoading(set, $('#users-container').children('.registered-user').length);
+		if (ajaxify.data.setName) {
+			startLoading(ajaxify.data.setName, $('#users-container').children('.registered-user').length);
 		}
 	}
 
@@ -104,74 +96,60 @@ define('forum/users', ['translator'], function(translator) {
 
 	function doSearch(page) {
 		var username = $('#search-user').val();
-		var notify = $('#user-notfound-notify');
 		page = page || 1;
 
 		if (!username) {
 			return loadPage(page);
 		}
 
-		notify.html('<i class="fa fa-spinner fa-spin"></i>');
-
 		socket.emit('user.search', {
 			query: username,
 			page: page,
 			searchBy: 'username',
-			sortBy: $('.search select').val(),
-			onlineOnly: $('.search .online-only').is(':checked')
+			sortBy: $('.search select').val() || getSortBy(),
+			onlineOnly: $('.search .online-only').is(':checked') || (getActiveSection() === 'online'),
+			bannedOnly: getActiveSection() === 'banned'
 		}, function(err, data) {
 			if (err) {
-				resetSearchNotify();
 				return app.alertError(err.message);
-			}
-
-			if (!data) {
-				return resetSearchNotify();
 			}
 
 			renderSearchResults(data);
 		});
 	}
 
-	function resetSearchNotify() {
-		var notify = $('#user-notfound-notify');
-		notify.html('<i class="fa fa-search"></i>');
-		notify.parent().removeClass('btn-warning label-warning btn-success label-success');
+	function getSortBy() {
+		var sortBy;
+		var activeSection = getActiveSection();
+		if (activeSection === 'sort-posts') {
+			sortBy = 'postcount';
+		} else if (activeSection === 'sort-reputation') {
+			sortBy = 'reputation';
+		} else if (activeSection === 'users') {
+			sortBy = 'joindate';
+		}
+		return sortBy;
 	}
 
-
 	function loadPage(page) {
-		socket.emit('user.loadSearchPage', {page: page, onlineOnly: $('.search .online-only').is(':checked')}, function(err, data) {
-			resetSearchNotify();
-			if (err) {
-				return app.alertError(err.message);
-			}
-
+		var section = getActiveSection();
+		section = section !== 'users' ? section : '';
+		$.get('/api/users/' + section + '?page=' + page, function(data) {
 			renderSearchResults(data);
 		});
 	}
 
 	function renderSearchResults(data) {
-		var notify = $('#user-notfound-notify');
+		$('#load-more-users-btn').addClass('hide');
 		templates.parse('partials/paginator', {pagination: data.pagination}, function(html) {
 			$('.pagination-container').replaceWith(html);
 		});
 
 		templates.parse('users', 'users', data, function(html) {
 			translator.translate(html, function(translated) {
+				translated = $(translated);
 				$('#users-container').html(translated);
-
-				if (!data.users.length) {
-					translator.translate('[[error:no-user]]', function(translated) {
-						notify.html(translated);
-						notify.parent().removeClass('btn-success label-success').addClass('btn-warning label-warning');
-					});
-				} else {
-					translator.translate('[[users:users-found-search-took, ' + data.matchCount + ', ' + data.timing + ']]', function(translated) {
-						notify.html(translated);
-						notify.parent().removeClass('btn-warning label-warning').addClass('btn-success label-success');
-					});
-				}
+				translated.find('span.timeago').timeago();
 			});
 		});
 	}

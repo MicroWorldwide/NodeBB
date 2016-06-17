@@ -5,8 +5,9 @@
 		urlArgs: "{config.cache-buster}",
 		paths: {
 			'forum': '../client',
+			'admin': '../admin',
 			'vendor': '../../vendor',
-			'mousetrap': '../../bower/mousetrap/mousetrap'
+			'plugins': '../../plugins'
 		}
 	});
 </script>

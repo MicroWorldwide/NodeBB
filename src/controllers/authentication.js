@@ -1,20 +1,20 @@
 "use strict";
 
-var async = require('async'),
-	winston = require('winston'),
-	passport = require('passport'),
-	nconf = require('nconf'),
-	validator = require('validator'),
-	_ = require('underscore'),
+var async = require('async');
+var winston = require('winston');
+var passport = require('passport');
+var nconf = require('nconf');
+var validator = require('validator');
+var _ = require('underscore');
 
-	db = require('../database'),
-	meta = require('../meta'),
-	user = require('../user'),
-	plugins = require('../plugins'),
-	utils = require('../../public/src/utils'),
-	Password = require('../password'),
+var db = require('../database');
+var meta = require('../meta');
+var user = require('../user');
+var plugins = require('../plugins');
+var utils = require('../../public/src/utils');
+var Password = require('../password');
 
-	authenticationController = {};
+var authenticationController = {};
 
 authenticationController.register = function(req, res, next) {
 	var registrationType = meta.config.registrationType || 'normal';
@@ -33,7 +33,7 @@ authenticationController.register = function(req, res, next) {
 
 	async.waterfall([
 		function(next) {
-			if (registrationType === 'invite-only') {
+			if (registrationType === 'invite-only' || registrationType === 'admin-invite-only') {
 				user.verifyInvitation(userData, next);
 			} else {
 				next();
@@ -55,13 +55,14 @@ authenticationController.register = function(req, res, next) {
 			user.isPasswordValid(userData.password, next);
 		},
 		function(next) {
+			res.locals.processLogin = true;	// set it to false in plugin if you wish to just register only
 			plugins.fireHook('filter:register.check', {req: req, res: res, userData: userData}, next);
 		},
 		function(data, next) {
-			if (registrationType === 'normal' || registrationType === 'invite-only') {
+			if (registrationType === 'normal' || registrationType === 'invite-only' || registrationType === 'admin-invite-only') {
 				registerAndLoginUser(req, res, userData, next);
 			} else if (registrationType === 'admin-approval') {
-				addToApprovalQueue(req, res, userData, next);
+				addToApprovalQueue(req, userData, next);
 			}
 		}
 	], function(err, data) {
@@ -85,21 +86,20 @@ function registerAndLoginUser(req, res, userData, callback) {
 		},
 		function(_uid, next) {
 			uid = _uid;
-			req.login({uid: uid}, next);
+			if (res.locals.processLogin) {
+				authenticationController.doLogin(req, uid, next);
+			} else {
+				next();
+			}
 		},
 		function(next) {
-			user.logIP(uid, req.ip);
-
-			user.deleteInvitation(userData.email);
-
-			user.notifications.sendWelcomeNotification(uid);
-
+			user.deleteInvitationKey(userData.email);
 			plugins.fireHook('filter:register.complete', {uid: uid, referrer: req.body.referrer || nconf.get('relative_path') + '/'}, next);
 		}
 	], callback);
 }
 
-function addToApprovalQueue(req, res, userData, callback) {
+function addToApprovalQueue(req, userData, callback) {
 	async.waterfall([
 		function(next) {
 			userData.ip = req.ip;
@@ -171,35 +171,9 @@ function continueLogin(req, res, next) {
 				res.status(200).send(nconf.get('relative_path') + '/reset/' + code);
 			});
 		} else {
-			req.login({
-				uid: userData.uid
-			}, function(err) {
+			authenticationController.doLogin(req, userData.uid, function(err) {
 				if (err) {
 					return res.status(403).send(err.message);
-				}
-
-				if (userData.uid) {
-					var uuid = utils.generateUUID();
-					req.session.meta = {};
-
-					// Associate IP used during login with user account
-					user.logIP(userData.uid, req.ip);
-					req.session.meta.ip = req.ip;
-
-					// Associate metadata retrieved via user-agent
-					req.session.meta = _.extend(req.session.meta, {
-						uuid: uuid,
-						datetime: Date.now(),
-						platform: req.useragent.platform,
-						browser: req.useragent.browser,
-						version: req.useragent.version
-					});
-
-					// Associate login session with user
-					user.auth.addSession(userData.uid, req.sessionID);
-					db.setObjectField('uid:' + userData.uid + 'sessionUUID:sessionId', uuid, req.sessionID);
-
-					plugins.fireHook('action:user.loggedIn', userData.uid);
 				}
 
 				if (!req.session.returnTo) {
@@ -215,26 +189,80 @@ function continueLogin(req, res, next) {
 	})(req, res, next);
 }
 
+authenticationController.doLogin = function(req, uid, callback) {
+	if (!uid) {
+		return callback();
+	}
+
+	req.login({uid: uid}, function(err) {
+		if (err) {
+			return callback(err);
+		}
+
+		authenticationController.onSuccessfulLogin(req, uid, callback);
+	});
+};
+
+authenticationController.onSuccessfulLogin = function(req, uid, callback) {
+	callback = callback || function() {};
+	var uuid = utils.generateUUID();
+	req.session.meta = {};
+
+	delete req.session.forceLogin;
+
+	// Associate IP used during login with user account
+	user.logIP(uid, req.ip);
+	req.session.meta.ip = req.ip;
+
+	// Associate metadata retrieved via user-agent
+	req.session.meta = _.extend(req.session.meta, {
+		uuid: uuid,
+		datetime: Date.now(),
+		platform: req.useragent.platform,
+		browser: req.useragent.browser,
+		version: req.useragent.version
+	});
+
+	// Associate login session with user
+	async.parallel([
+		function (next) {
+			user.auth.addSession(uid, req.sessionID, next);
+		},
+		function (next) {
+			db.setObjectField('uid:' + uid + 'sessionUUID:sessionId', uuid, req.sessionID, next);
+		}
+	], function(err) {
+		if (err) {
+			return callback(err);
+		}
+		plugins.fireHook('action:user.loggedIn', uid);
+		callback();
+	});
+};
+
 authenticationController.localLogin = function(req, username, password, next) {
-	if (!username || !password) {
-		return next(new Error('[[error:invalid-password]]'));
+	if (!username) {
+		return next(new Error('[[error:invalid-username]]'));
 	}
 
 	var userslug = utils.slugify(username);
 	var uid, userData = {};
 
 	async.waterfall([
-		function(next) {
+		function (next) {
+			user.isPasswordValid(password, next);
+		},
+		function (next) {
 			user.getUidByUserslug(userslug, next);
 		},
-		function(_uid, next) {
+		function (_uid, next) {
 			if (!_uid) {
 				return next(new Error('[[error:no-user]]'));
 			}
 			uid = _uid;
 			user.auth.logAttempt(uid, req.ip, next);
 		},
-		function(next) {
+		function (next) {
 			async.parallel({
 				userData: function(next) {
 					db.getObjectFields('user:' + uid, ['password', 'banned', 'passwordExpiry'], next);
@@ -244,7 +272,7 @@ authenticationController.localLogin = function(req, username, password, next) {
 				}
 			}, next);
 		},
-		function(result, next) {
+		function (result, next) {
 			userData = result.userData;
 			userData.uid = uid;
 			userData.isAdmin = result.isAdmin;
@@ -261,7 +289,7 @@ authenticationController.localLogin = function(req, username, password, next) {
 			}
 			Password.compare(password, userData.password, next);
 		},
-		function(passwordMatch, next) {
+		function (passwordMatch, next) {
 			if (!passwordMatch) {
 				return next(new Error('[[error:invalid-password]]'));
 			}
@@ -280,8 +308,11 @@ authenticationController.logout = function(req, res, next) {
 			}
 			req.logout();
 
-			plugins.fireHook('action:user.loggedOut', {req: req, res: res, uid: uid});
-			res.status(200).send('');
+			user.setUserField(uid, 'lastonline', Date.now() - 300000);
+
+			plugins.fireHook('static:user.loggedOut', {req: req, res: res, uid: uid}, function() {
+				res.status(200).send('');
+			});
 		});
 	} else {
 		res.status(200).send('');

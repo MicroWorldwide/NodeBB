@@ -5,7 +5,7 @@
 	<!-- IF !users.length -->
 	<p class="panel-body">
 		There are no users in the registration queue. <br>
-		To enable this feature, go to <a href="{config.relative_path}/admin/settings/user">Settings -> User -> Authentication</a> and set
+		To enable this feature, go to <a href="{config.relative_path}/admin/settings/user">Settings &rarr; User &rarr; Authentication</a> and set
 		<strong>Registration Type</strong> to "Admin Approval".
 	</p>
 	<!-- ENDIF !users.length -->
@@ -13,8 +13,8 @@
 		<tr>
 			<th>Name</th>
 			<th>Email</th>
-			<th>IP</th>
-			<th>Time</th>
+			<th class="hidden-xs">IP</th>
+			<th class="hidden-xs">Time</th>
 			<th></th>
 		</tr>
 		<!-- BEGIN users -->
@@ -35,7 +35,7 @@
 				<!-- ENDIF users.emailSpam -->
 				{users.email}
 			</td>
-			<td>
+			<td class="hidden-xs">
 				<!-- IF users.ipSpam -->
 				<i class="fa fa-times-circle text-danger" title="Frequency: {users.spamData.ip.frequency} Appears: {users.spamData.ip.appears}"></i>
 				<!-- ELSE -->
@@ -43,8 +43,8 @@
 				<!-- ENDIF users.ipSpam -->
 				{users.ip}
 			</td>
-			<td>
-				<span class="timeago" title="{users.timestamp}"></span>
+			<td class="hidden-xs">
+				<span class="timeago" title="{users.timestampISO}"></span>
 			</td>
 			<td>
 				<div class="btn-group pull-right">
@@ -55,6 +55,8 @@
 		</tr>
 		<!-- END users -->
 	</table>
+
+	<!-- IMPORT partials/paginator.tpl -->
 </div>
 
 <div class="invitations panel panel-success">
@@ -66,18 +68,23 @@
 		<br><br>
 		The username will be displayed to the right of the emails for users who have redeemed their invitations.
 	</p>
-	<table class="table table-striped users-list">
+	<table class="table table-striped invites-list">
 		<tr>
 			<th>Inviter Username</th>
 			<th>Invitee Email</th>
 			<th>Invitee Username (if registered)</th>
 		</tr>
 		<!-- BEGIN invites -->
-		<tr>
-			<!-- BEGIN invites.invitations -->
-			<td><!-- IF @first -->{invites.username}<!-- ENDIF @first --></td>
+		<!-- BEGIN invites.invitations -->
+		<tr data-invitation-mail="{invites.invitations.email}"
+				data-invited-by="{invites.username}">
+			<td class ="invited-by"><!-- IF @first -->{invites.username}<!-- ENDIF @first --></td>
 			<td>{invites.invitations.email}</td>
-			<td>{invites.invitations.username}</td>
+			<td>{invites.invitations.username}
+				<div class="btn-group pull-right">
+					<button class="btn btn-danger btn-xs" data-action="delete"><i class="fa fa-times"></i></button>
+				</div>
+			</td>
 		</tr>
 		<!-- END invites.invitations -->
 		<!-- END invites -->

@@ -5,8 +5,10 @@ var app,
 		admin: {}
 	},
 	async = require('async'),
+	fs = require('fs'),
 	path = require('path'),
 	csrf = require('csurf'),
+	_ = require('underscore'),
 
 	validator = require('validator'),
 	nconf = require('nconf'),
@@ -14,6 +16,7 @@ var app,
 	toobusy = require('toobusy-js'),
 
 	plugins = require('../plugins'),
+	languages = require('../languages'),
 	meta = require('../meta'),
 	user = require('../user'),
 	groups = require('../groups'),
@@ -25,7 +28,7 @@ var app,
 		helpers: require('../controllers/helpers')
 	};
 
-toobusy.maxLag(parseInt(meta.config.eventLoopLagThreshold, 10) || 70);
+toobusy.maxLag(parseInt(meta.config.eventLoopLagThreshold, 10) || 100);
 toobusy.interval(parseInt(meta.config.eventLoopInterval, 10) || 500);
 
 middleware.authenticate = function(req, res, next) {
@@ -47,7 +50,11 @@ middleware.applyCSRF = csrf();
 middleware.ensureLoggedIn = ensureLoggedIn.ensureLoggedIn(nconf.get('relative_path') + '/login');
 
 middleware.pageView = function(req, res, next) {
-	analytics.pageView(req.ip);
+	analytics.pageView({
+		ip: req.ip,
+		path: req.path,
+		uid: req.hasOwnProperty('user') && req.user.hasOwnProperty('uid') ? parseInt(req.user.uid, 10) : 0
+	});
 
 	plugins.fireHook('action:middleware.pageView', {req: req});
 
@@ -64,6 +71,32 @@ middleware.pageView = function(req, res, next) {
 	}
 };
 
+middleware.addHeaders = function (req, res, next) {
+	var defaults = {
+		'X-Powered-By': 'NodeBB',
+		'X-Frame-Options': 'SAMEORIGIN',
+		'Access-Control-Allow-Origin': 'null'	// yes, string null.
+	};
+	var headers = {
+		'X-Powered-By': meta.config['powered-by'],
+		'X-Frame-Options': meta.config['allow-from-uri'] ? 'ALLOW-FROM ' + meta.config['allow-from-uri'] : undefined,
+		'Access-Control-Allow-Origin': meta.config['access-control-allow-origin'],
+		'Access-Control-Allow-Methods': meta.config['access-control-allow-methods'],
+		'Access-Control-Allow-Headers': meta.config['access-control-allow-headers']
+	};
+
+	_.defaults(headers, defaults);
+	headers = _.pick(headers, Boolean);		// Remove falsy headers
+
+	for(var key in headers) {
+		if (headers.hasOwnProperty(key)) {
+			res.setHeader(key, headers[key]);
+		}
+	}
+
+	next();
+};
+
 middleware.pluginHooks = function(req, res, next) {
 	async.each(plugins.loadedHooks['filter:router.page'] || [], function(hookObj, next) {
 		hookObj.method(req, res, next);
@@ -74,6 +107,10 @@ middleware.pluginHooks = function(req, res, next) {
 };
 
 middleware.redirectToAccountIfLoggedIn = function(req, res, next) {
+	if (req.session.forceLogin) {
+		return next();
+	}
+
 	if (!req.user) {
 		return next();
 	}
@@ -120,7 +157,7 @@ middleware.checkAccountPermissions = function(req, res, next) {
 				return next(null, true);
 			}
 
-			user.isAdministrator(req.uid, next);
+			user.isAdminOrGlobalMod(req.uid, next);
 		}
 	], function (err, allowed) {
 		if (err || allowed) {
@@ -130,14 +167,57 @@ middleware.checkAccountPermissions = function(req, res, next) {
 	});
 };
 
+middleware.redirectUidToUserslug = function(req, res, next) {
+	var uid = parseInt(req.params.uid, 10);
+	if (!uid) {
+		return next();
+	}
+	user.getUserField(uid, 'userslug', function(err, userslug) {
+		if (err || !userslug) {
+			return next(err);
+		}
+
+		var path = req.path.replace(/^\/api/, '')
+				.replace('uid', 'user')
+				.replace(uid, function() { return userslug; });
+		controllers.helpers.redirect(res, path);
+	});
+};
+
 middleware.isAdmin = function(req, res, next) {
 	if (!req.uid) {
 		return controllers.helpers.notAllowed(req, res);
 	}
 
 	user.isAdministrator(req.uid, function (err, isAdmin) {
-		if (err || isAdmin) {
+		if (err) {
 			return next(err);
+		}
+
+		if (isAdmin) {
+			user.hasPassword(req.uid, function(err, hasPassword) {
+				if (err) {
+					return next(err);
+				}
+
+				if (!hasPassword) {
+					return next();
+				}
+
+				var loginTime = req.session.meta ? req.session.meta.datetime : 0;
+				if (loginTime && parseInt(loginTime, 10) > Date.now() - 3600000) {
+					return next();
+				}
+
+				req.session.returnTo = req.path.replace(/^\/api/, '');
+				req.session.forceLogin = 1;
+				if (res.locals.isAPI) {
+					res.status(401).json({});
+				} else {
+					res.redirect(nconf.get('relative_path') + '/login');
+				}
+			});
+			return;
 		}
 
 		if (res.locals.isAPI) {
@@ -222,9 +302,51 @@ middleware.privateUploads = function(req, res, next) {
 
 middleware.busyCheck = function(req, res, next) {
 	if (global.env === 'production' && (!meta.config.hasOwnProperty('eventLoopCheckEnabled') || parseInt(meta.config.eventLoopCheckEnabled, 10) === 1) && toobusy()) {
+		analytics.increment('errors:503');
 		res.status(503).type('text/html').sendFile(path.join(__dirname, '../../public/503.html'));
 	} else {
 		next();
+	}
+};
+
+middleware.applyBlacklist = function(req, res, next) {
+	meta.blacklist.test(req.ip, function(err) {
+		next(err);
+	});
+};
+
+middleware.processLanguages = function(req, res, next) {
+	var code = req.params.code;
+	var key = req.path.match(/[\w]+\.json/);
+
+	if (code && key) {
+		languages.get(code, key[0], function(err, language) {
+			res.status(200).json(language);
+		})
+	} else {
+		res.status(404).json('{}');
+	}
+};
+
+middleware.processTimeagoLocales = function(req, res, next) {
+	var fallback = req.path.indexOf('-short') === -1 ? 'jquery.timeago.en.js' : 'jquery.timeago.en-short.js',
+		localPath = path.join(__dirname, '../../public/vendor/jquery/timeago/locales', req.path),
+		exists;
+
+	try {
+		exists = fs.accessSync(localPath, fs.F_OK | fs.R_OK);
+	} catch(e) {
+		exists = false;
+	}
+
+	if (exists) {
+		res.status(200).sendFile(localPath, {
+			maxAge: app.enabled('cache') ? 5184000000 : 0
+		});
+	} else {
+		res.status(200).sendFile(path.join(__dirname, '../../public/vendor/jquery/timeago/locales', fallback), {
+			maxAge: app.enabled('cache') ? 5184000000 : 0
+		});
 	}
 };
 

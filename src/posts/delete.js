@@ -1,37 +1,38 @@
 'use strict';
 
-var async = require('async'),
-	_ = require('underscore'),
+var async = require('async');
+var _ = require('underscore');
 
-	db = require('../database'),
-	topics = require('../topics'),
-	user = require('../user'),
-	plugins = require('../plugins');
+var db = require('../database');
+var topics = require('../topics');
+var user = require('../user');
+var plugins = require('../plugins');
 
 module.exports = function(Posts) {
 
-	Posts.delete = function(pid, callback) {
+	Posts.delete = function(pid, uid, callback) {
 		var postData;
 		async.waterfall([
-			function(next) {
+			function (next) {
+				plugins.fireHook('filter:post.delete', {pid: pid, uid: uid}, next);
+			},
+			function (data, next) {
 				Posts.setPostField(pid, 'deleted', 1, next);
 			},
-			function(next) {
+			function (next) {
 				Posts.getPostFields(pid, ['pid', 'tid', 'uid', 'timestamp'], next);
 			},
-			function(_post, next) {
+			function (_post, next) {
 				postData = _post;
-				topics.getTopicField(_post.tid, 'cid', next);
+				topics.getTopicFields(_post.tid, ['tid', 'cid', 'pinned'], next);
 			},
-			function(cid, next) {
-				plugins.fireHook('action:post.delete', pid);
-
+			function (topicData, next) {
 				async.parallel([
 					function(next) {
-						updateTopicTimestamp(postData.tid, next);
+						updateTopicTimestamp(topicData, next);
 					},
 					function(next) {
-						db.sortedSetRemove('cid:' + cid + ':pids', pid, next);
+						db.sortedSetRemove('cid:' + topicData.cid + ':pids', pid, next);
 					},
 					function(next) {
 						Posts.dismissFlag(pid, next);
@@ -39,100 +40,121 @@ module.exports = function(Posts) {
 					function(next) {
 						topics.updateTeaser(postData.tid, next);
 					}
-				], function(err) {
-					next(err, postData);
-				});
+				], next);
+			},
+			function (results, next) {
+				plugins.fireHook('action:post.delete', pid);
+				next(null, postData);
 			}
 		], callback);
 	};
 
-	Posts.restore = function(pid, callback) {
+	Posts.restore = function(pid, uid, callback) {
 		var postData;
 		async.waterfall([
-			function(next) {
+			function (next) {
+				plugins.fireHook('filter:post.restore', {pid: pid, uid: uid}, next);
+			},
+			function (data, next) {
 				Posts.setPostField(pid, 'deleted', 0, next);
 			},
-			function(next) {
+			function (next) {
 				Posts.getPostFields(pid, ['pid', 'tid', 'uid', 'content', 'timestamp'], next);
 			},
-			function(_post, next) {
+			function (_post, next) {
 				postData = _post;
-				topics.getTopicField(_post.tid, 'cid', next);
+				topics.getTopicFields(_post.tid, ['tid', 'cid', 'pinned'], next);
 			},
-			function(cid, next) {
-				postData.cid = cid;
-				plugins.fireHook('action:post.restore', _.clone(postData));
-
+			function (topicData, next) {
+				postData.cid = topicData.cid;
 				async.parallel([
 					function(next) {
-						updateTopicTimestamp(postData.tid, next);
+						updateTopicTimestamp(topicData, next);
 					},
 					function(next) {
-						db.sortedSetAdd('cid:' + cid + ':pids', postData.timestamp, pid, next);
+						db.sortedSetAdd('cid:' + topicData.cid + ':pids', postData.timestamp, pid, next);
 					},
 					function(next) {
 						topics.updateTeaser(postData.tid, next);
 					}
-				], function(err) {
-					next(err, postData);
-				});
+				], next);
+			},
+			function (results, next) {
+				plugins.fireHook('action:post.restore', _.clone(postData));
+				next(null, postData);
 			}
 		], callback);
 	};
 
-	function updateTopicTimestamp(tid, callback) {
-		topics.getLatestUndeletedPid(tid, function(err, pid) {
-			if(err || !pid) {
-				return callback(err);
+	function updateTopicTimestamp(topicData, callback) {
+		var timestamp;
+		async.waterfall([
+			function (next) {
+				topics.getLatestUndeletedPid(topicData.tid, next);
+			},
+			function (pid, next) {
+				if (!parseInt(pid, 10)) {
+					return callback();
+				}
+				Posts.getPostField(pid, 'timestamp', next);
+			},
+			function (_timestamp, next) {
+				timestamp = _timestamp;
+				if (!parseInt(timestamp, 10)) {
+					return callback();
+				}
+				topics.updateTimestamp(topicData.tid, timestamp, next);
+			},
+			function (next) {
+				if (parseInt(topicData.pinned, 10) !== 1) {
+					db.sortedSetAdd('cid:' + topicData.cid + ':tids', timestamp, topicData.tid, next);
+				} else {
+					next();
+				}
 			}
-
-			Posts.getPostField(pid, 'timestamp', function(err, timestamp) {
-				if (err) {
-					return callback(err);
-				}
-
-				if (timestamp) {
-					return topics.updateTimestamp(tid, timestamp, callback);
-				}
-				callback();
-			});
-		});
+		], callback);
 	}
 
-	Posts.purge = function(pid, callback) {
-		Posts.exists(pid, function(err, exists) {
-			if (err || !exists) {
-				return callback(err);
+	Posts.purge = function(pid, uid, callback) {
+		async.waterfall([
+			function (next) {
+				Posts.exists(pid, next);
+			},
+			function (exists, next) {
+				if (!exists) {
+					return callback();
+				}
+				plugins.fireHook('filter:post.purge', {pid: pid, uid: uid}, next);
+			},
+			function (data, next) {
+				async.parallel([
+					function (next) {
+						deletePostFromTopicAndUser(pid, next);
+					},
+					function (next) {
+						deletePostFromCategoryRecentPosts(pid, next);
+					},
+					function (next) {
+						deletePostFromUsersFavourites(pid, next);
+					},
+					function (next) {
+						deletePostFromUsersVotes(pid, next);
+					},
+					function (next) {
+						db.sortedSetsRemove(['posts:pid', 'posts:flagged'], pid, next);
+					},
+					function (next) {
+						Posts.dismissFlag(pid, next);
+					}
+				], function(err) {
+					if (err) {
+						return next(err);
+					}
+					plugins.fireHook('action:post.purge', pid);
+					db.delete('post:' + pid, next);
+				});
 			}
-
-			async.parallel([
-				function(next) {
-					deletePostFromTopicAndUser(pid, next);
-				},
-				function(next) {
-					deletePostFromCategoryRecentPosts(pid, next);
-				},
-				function(next) {
-					deletePostFromUsersFavourites(pid, next);
-				},
-				function(next) {
-					deletePostFromUsersVotes(pid, next);
-				},
-				function(next) {
-					db.sortedSetsRemove(['posts:pid', 'posts:flagged'], pid, next);
-				},
-				function(next) {
-					Posts.dismissFlag(pid, next);
-				}
-			], function(err) {
-				if (err) {
-					return callback(err);
-				}
-
-				plugins.fireHook('action:post.purge', pid);
-				db.delete('post:' + pid, callback);
-			});
-		});
+		], callback);
 	};
 
 	function deletePostFromTopicAndUser(pid, callback) {
@@ -150,7 +172,7 @@ module.exports = function(Posts) {
 					return callback(err);
 				}
 
-				topics.getTopicFields(postData.tid, ['cid'], function(err, topicData) {
+				topics.getTopicFields(postData.tid, ['tid', 'cid', 'pinned'], function(err, topicData) {
 					if (err) {
 						return callback(err);
 					}
@@ -168,8 +190,14 @@ module.exports = function(Posts) {
 						function(next) {
 							topics.updateTeaser(postData.tid, next);
 						},
+						function (next) {
+							updateTopicTimestamp(topicData, next);
+						},
 						function(next) {
 							db.sortedSetIncrBy('cid:' + topicData.cid + ':tids:posts', -1, postData.tid, next);
+						},
+						function(next) {
+							db.sortedSetIncrBy('tid:' + postData.tid + ':posters', -1, postData.uid, next);
 						},
 						function(next) {
 							user.incrementUserPostCountBy(postData.uid, -1, next);

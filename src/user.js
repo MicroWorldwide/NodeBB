@@ -1,12 +1,12 @@
 'use strict';
 
-var	async = require('async'),
+var	async = require('async');
 
-	plugins = require('./plugins'),
-	db = require('./database'),
-	topics = require('./topics'),
-	privileges = require('./privileges'),
-	utils = require('../public/src/utils');
+var plugins = require('./plugins');
+var db = require('./database');
+var topics = require('./topics');
+var privileges = require('./privileges');
+var utils = require('../public/src/utils');
 
 (function(User) {
 
@@ -19,6 +19,7 @@ var	async = require('async'),
 	require('./user/auth')(User);
 	require('./user/create')(User);
 	require('./user/posts')(User);
+	require('./user/topics')(User);
 	require('./user/categories')(User);
 	require('./user/follow')(User);
 	require('./user/profile')(User);
@@ -39,7 +40,6 @@ var	async = require('async'),
 			if (err || userData.status === 'offline' || now - parseInt(userData.lastonline, 10) < 300000) {
 				return callback(err);
 			}
-
 			User.setUserField(uid, 'lastonline', now, callback);
 		});
 	};
@@ -70,7 +70,7 @@ var	async = require('async'),
 		if (set === 'users:online') {
 			var count = parseInt(stop, 10) === -1 ? stop : stop - start + 1;
 			var now = Date.now();
-			db.getSortedSetRevRangeByScore(set, start, count, now, now - 300000, callback);
+			db.getSortedSetRevRangeByScore(set, start, count, '+inf', now - 300000, callback);
 		} else {
 			db.getSortedSetRevRange(set, start, stop, callback);
 		}
@@ -116,6 +116,7 @@ var	async = require('async'),
 						user.administrator = results.isAdmin[index];
 						user.banned = parseInt(user.banned, 10) === 1;
 						user['email:confirmed'] = parseInt(user['email:confirmed'], 10) === 1;
+						user.lastonlineISO = utils.toISOString(user.lastonline) || user.joindateISO;
 					}
 				});
 				plugins.fireHook('filter:userlist.get', {users: results.userData, uid: uid}, next);
@@ -229,6 +230,19 @@ var	async = require('async'),
 		privileges.users.isAdministrator(uid, callback);
 	};
 
+	User.isGlobalModerator = function(uid, callback) {
+		privileges.users.isGlobalModerator(uid, callback);
+	};
+
+	User.isAdminOrGlobalMod = function(uid, callback) {
+		async.parallel({
+			isAdmin: async.apply(User.isAdministrator, uid),
+			isGlobalMod: async.apply(User.isGlobalModerator, uid)
+		}, function(err, results) {
+			callback(err, results ? (results.isAdmin || results.isGlobalMod) : false);
+		});
+	};
+
 	User.isAdminOrSelf = function(callerUid, uid, callback) {
 		if (parseInt(callerUid, 10) === parseInt(uid, 10)) {
 			return callback();
@@ -243,4 +257,3 @@ var	async = require('async'),
 
 
 }(exports));
-

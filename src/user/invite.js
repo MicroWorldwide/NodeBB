@@ -1,17 +1,14 @@
 
 'use strict';
 
-var async = require('async'),
-	nconf = require('nconf'),
-	winston = require('winston'),
-	db = require('./../database'),
+var async = require('async');
+var nconf = require('nconf');
 
-	meta = require('../meta'),
-	emailer = require('../emailer'),
-
-	plugins = require('../plugins'),
-	translator = require('../../public/src/modules/translator'),
-	utils = require('../../public/src/utils');
+var db = require('./../database');
+var meta = require('../meta');
+var emailer = require('../emailer');
+var translator = require('../../public/src/modules/translator');
+var utils = require('../../public/src/utils');
 
 
 module.exports = function(User) {
@@ -123,7 +120,31 @@ module.exports = function(User) {
 		], callback);
 	};
 
-	User.deleteInvitation = function(email, callback) {
+	User.deleteInvitation = function(invitedBy, email, callback) {
+		callback = callback || function() {};
+		async.waterfall([
+			function getInvitedByUid(next) {
+				User.getUidByUsername(invitedBy, next);
+			},
+			function deleteRegistries(invitedByUid, next) {
+				if (!invitedByUid) {
+					return next(new Error('[[error:invalid-username]]'));
+				}
+				async.parallel([
+					function deleteFromReferenceList(next) {
+						db.setRemove('invitation:uid:' + invitedByUid, email, next);
+					},
+					function deleteInviteKey(next) {
+						db.delete('invitation:email:' + email, callback);
+					}
+				], function(err) {
+					next(err)
+				});
+			}
+		], callback);
+	};
+
+	User.deleteInvitationKey = function(email, callback) {
 		callback = callback || function() {};
 		db.delete('invitation:email:' + email, callback);
 	};

@@ -1,13 +1,13 @@
 'use strict';
 
-var nconf = require('nconf'),
-	async = require('async'),
-	validator = require('validator'),
+var nconf = require('nconf');
+var async = require('async');
+var validator = require('validator');
 
-	translator = require('../../public/src/modules/translator'),
-	categories = require('../categories'),
-	plugins = require('../plugins'),
-	meta = require('../meta');
+var translator = require('../../public/src/modules/translator');
+var categories = require('../categories');
+var plugins = require('../plugins');
+var meta = require('../meta');
 
 var helpers = {};
 
@@ -41,7 +41,7 @@ helpers.redirect = function(res, url) {
 	if (res.locals.isAPI) {
 		res.status(308).json(url);
 	} else {
-		res.redirect(nconf.get('relative_path') + url);
+		res.redirect(nconf.get('relative_path') + encodeURI(url));
 	}
 };
 
@@ -69,6 +69,13 @@ helpers.buildCategoryBreadcrumbs = function(cid, callback) {
 	}, function(err) {
 		if (err) {
 			return callback(err);
+		}
+
+		if (!meta.config.homePageRoute && meta.config.homePageCustom) {
+			breadcrumbs.unshift({
+				text: '[[global:header.categories]]',
+				url: nconf.get('relative_path') + '/categories'
+			});
 		}
 
 		breadcrumbs.unshift({
@@ -105,7 +112,11 @@ helpers.buildTitle = function(pageTitle) {
 
 	var browserTitle = validator.escape(meta.config.browserTitle || meta.config.title || 'NodeBB');
 	pageTitle = pageTitle || '';
-	var title = titleLayout.replace('{pageTitle}', pageTitle).replace('{browserTitle}', browserTitle);
+	var title = titleLayout.replace('{pageTitle}', function() {
+		return pageTitle;
+	}).replace('{browserTitle}', function() {
+		return browserTitle;
+	});
 	return title;
 };
 

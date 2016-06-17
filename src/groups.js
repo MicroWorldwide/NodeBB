@@ -18,6 +18,7 @@ var utils = require('../public/src/utils');
 	require('./groups/membership')(Groups);
 	require('./groups/ownership')(Groups);
 	require('./groups/search')(Groups);
+	require('./groups/cover')(Groups);
 
 	var ephemeralGroups = ['guests'],
 
@@ -181,7 +182,7 @@ var utils = require('../public/src/utils');
 				results.base.deleted = !!parseInt(results.base.deleted, 10);
 				results.base.hidden = !!parseInt(results.base.hidden, 10);
 				results.base.system = !!parseInt(results.base.system, 10);
-				results.base.private = results.base.private ? !!parseInt(results.base.private, 10) : true;
+				results.base.private = (results.base.private === null || results.base.private === undefined) ? true : !!parseInt(results.base.private, 10);
 				results.base.disableJoinRequests = parseInt(results.base.disableJoinRequests, 10) === 1;
 				results.base.isMember = results.isMember;
 				results.base.isPending = results.isPending;
@@ -239,9 +240,9 @@ var utils = require('../public/src/utils');
 	Groups.escapeGroupData = function(group) {
 		if (group) {
 			group.nameEncoded = encodeURIComponent(group.name);
-			group.displayName = validator.escape(group.name);
-			group.description = validator.escape(group.description);
-			group.userTitle = validator.escape(group.userTitle) || group.displayName;
+			group.displayName = validator.escape(String(group.name));
+			group.description = validator.escape(String(group.description || ''));
+			group.userTitle = validator.escape(String(group.userTitle || '')) || group.displayName;
 		}
 	};
 
@@ -348,7 +349,9 @@ var utils = require('../public/src/utils');
 
 	Groups.getLatestMemberPosts = function(groupName, max, uid, callback) {
 		async.waterfall([
-			async.apply(Groups.getMembers, groupName, 0, -1),
+			function(next) {
+				Groups.getMembers(groupName, 0, -1, next);
+			},
 			function(uids, next) {
 				if (!Array.isArray(uids) || !uids.length) {
 					return callback(null, []);
@@ -356,7 +359,7 @@ var utils = require('../public/src/utils');
 				var keys = uids.map(function(uid) {
 					return 'uid:' + uid + ':posts';
 				});
-				db.getSortedSetRevUnion(keys, 0, max - 1, next);
+				db.getSortedSetRevRange(keys, 0, max - 1, next);
 			},
 			function(pids, next) {
 				privileges.posts.filter('read', pids, uid, next);
@@ -408,10 +411,11 @@ var utils = require('../public/src/utils');
 					group.createtimeISO = utils.toISOString(group.createtime);
 					group.hidden = parseInt(group.hidden, 10) === 1;
 					group.system = parseInt(group.system, 10) === 1;
-					group.private = parseInt(group.private, 10) === 1;
+					group.private = (group.private === null || group.private === undefined) ? true : !!parseInt(group.private, 10);
 					group.disableJoinRequests = parseInt(group.disableJoinRequests) === 1;
 
 					group['cover:url'] = group['cover:url'] || require('./coverPhoto').getDefaultGroupCover(group.name);
+					group['cover:thumb:url'] = group['cover:thumb:url'] || group['cover:url'];
 					group['cover:position'] = group['cover:position'] || '50% 50%';
 				}
 			});
@@ -423,9 +427,13 @@ var utils = require('../public/src/utils');
 	};
 
 	Groups.getUserGroups = function(uids, callback) {
+		Groups.getUserGroupsFromSet('groups:visible:createtime', uids, callback);
+	};
+
+	Groups.getUserGroupsFromSet = function (set, uids, callback) {
 		async.waterfall([
 			function(next) {
-				db.getSortedSetRevRange('groups:visible:createtime', 0, -1, next);
+				db.getSortedSetRevRange(set, 0, -1, next);
 			},
 			function(groupNames, next) {
 				var groupSets = groupNames.map(function(name) {

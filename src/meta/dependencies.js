@@ -12,7 +12,9 @@ module.exports = function(Meta) {
 	Meta.dependencies = {};
 
 	Meta.dependencies.check = function(callback) {
-		var modules = Object.keys(pkg.dependencies);
+		var modules = Object.keys(pkg.dependencies),
+			depsOutdated = false,
+			depsMissing = false;
 		winston.verbose('Checking dependencies for outdated modules');
 
 		async.every(modules, function(module, next) {
@@ -20,7 +22,7 @@ module.exports = function(Meta) {
 				encoding: 'utf-8'
 			}, function(err, pkgData) {
 				// If a bundled plugin/theme is not present, skip the dep check (#3384)
-				if (err && err.code === 'ENOENT' && (module.startsWith('nodebb-plugin') || module.startsWith('nodebb-theme'))) {
+				if (err && err.code === 'ENOENT' && (module === 'nodebb-rewards-essentials' || module.startsWith('nodebb-plugin') || module.startsWith('nodebb-theme'))) {
 					winston.warn('[meta/dependencies] Bundled plugin ' + module + ' not found, skipping dependency check.');
 					return next(true);
 				}
@@ -33,15 +35,23 @@ module.exports = function(Meta) {
 						next(true);
 					} else {
 						process.stdout.write('[' + 'outdated'.yellow + '] ' + module.bold + ' installed v' + pkgData.version + ', package.json requires ' + pkg.dependencies[module] + '\n');
-						next(false);
+						depsOutdated = true;
+						next(true);
 					}
 				} catch(e) {
-					winston.error('[meta/dependencies] Could not read: ' + module);
-					process.exit();
+					process.stdout.write('[' + 'missing'.red + '] ' + module.bold + ' is a required dependency but could not be found\n');
+					depsMissing = true;
+					next(true);
 				}
 			});
 		}, function(ok) {
-			callback(!ok && global.env !== 'development' ? new Error('dependencies-out-of-date') : null);
+			if (depsMissing) {
+				callback(new Error('dependencies-missing'));
+			} else if (depsOutdated) {
+				callback(global.env !== 'development' ? new Error('dependencies-out-of-date') : null);
+			} else {
+				callback(null);
+			}
 		});
 	};
 };

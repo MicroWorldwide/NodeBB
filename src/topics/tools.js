@@ -49,7 +49,7 @@ module.exports = function(Topics) {
 					return callback(new Error('[[error:topic-already-restored]]'));
 				}
 
-				Topics[isDelete ? 'delete' : 'restore'](tid, next);
+				Topics[isDelete ? 'delete' : 'restore'](tid, uid, next);
 			},
 			function (next) {
 				topicData.deleted = isDelete ? 1 : 0;
@@ -94,7 +94,7 @@ module.exports = function(Topics) {
 			function (_cid, next) {
 				cid = _cid;
 
-				Topics.purgePostsAndTopic(tid, next);
+				Topics.purgePostsAndTopic(tid, uid, next);
 			},
 			function (next) {
 				next(null, {tid: tid, cid: cid, uid: uid});

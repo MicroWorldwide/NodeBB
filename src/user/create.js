@@ -1,14 +1,13 @@
 'use strict';
 
-var async = require('async'),
-	db = require('../database'),
-	utils = require('../../public/src/utils'),
-	validator = require('validator'),
-	plugins = require('../plugins'),
-	groups = require('../groups'),
-	meta = require('../meta'),
-	notifications = require('../notifications'),
-	translator = require('../../public/src/modules/translator');
+var async = require('async');
+var db = require('../database');
+var utils = require('../../public/src/utils');
+var validator = require('validator');
+var plugins = require('../plugins');
+var groups = require('../groups');
+var meta = require('../meta');
+
 
 module.exports = function(User) {
 
@@ -31,8 +30,9 @@ module.exports = function(User) {
 				'userslug': data.userslug,
 				'email': data.email,
 				'joindate': timestamp,
+				'lastonline': timestamp,
 				'picture': '',
-				'fullname': '',
+				'fullname': data.fullname || '',
 				'location': '',
 				'birthday': '',
 				'website': '',
@@ -89,13 +89,20 @@ module.exports = function(User) {
 								db.sortedSetAdd('userslug:uid', userData.uid, userData.userslug, next);
 							},
 							function(next) {
-								db.sortedSetAdd('users:joindate', timestamp, userData.uid, next);
+								var sets = ['users:joindate', 'users:online'];
+								if (parseInt(userData.uid) !== 1) {
+									sets.push('users:notvalidated');
+								}
+								db.sortedSetsAdd(sets, timestamp, userData.uid, next);
 							},
 							function(next) {
 								db.sortedSetsAdd(['users:postcount', 'users:reputation'], 0, userData.uid, next);
 							},
 							function(next) {
 								groups.join('registered-users', userData.uid, next);
+							},
+							function(next) {
+								User.notifications.sendWelcomeNotification(userData.uid, next);
 							},
 							function(next) {
 								if (userData.email) {
@@ -172,7 +179,7 @@ module.exports = function(User) {
 					next();
 				}
 			}
-		}, function(err, results) {
+		}, function(err) {
 			callback(err);
 		});
 	};
@@ -185,6 +192,11 @@ module.exports = function(User) {
 		if (password.length < meta.config.minimumPasswordLength) {
 			return callback(new Error('[[user:change_password_error_length]]'));
 		}
+
+		if (password.length > 4096) {
+			return callback(new Error('[[error:password-too-long]]'));
+		}
+
 		callback();
 	};
 

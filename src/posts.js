@@ -1,14 +1,14 @@
 'use strict';
 
-var async = require('async'),
-	_ = require('underscore'),
+var async = require('async');
+var _ = require('underscore');
 
-	db = require('./database'),
-	utils = require('../public/src/utils'),
-	user = require('./user'),
-	topics = require('./topics'),
-	privileges = require('./privileges'),
-	plugins = require('./plugins');
+var db = require('./database');
+var utils = require('../public/src/utils');
+var user = require('./user');
+var topics = require('./topics');
+var privileges = require('./privileges');
+var plugins = require('./plugins');
 
 (function(Posts) {
 
@@ -55,9 +55,11 @@ var async = require('async'),
 					if (!post) {
 						return next();
 					}
-
-					post.relativeTime = utils.toISOString(post.timestamp);
-					post.relativeEditTime = parseInt(post.edited, 10) !== 0 ? utils.toISOString(post.edited) : '';
+					post.upvotes = parseInt(post.upvotes, 10) || 0;
+					post.downvotes = parseInt(post.downvotes, 10) || 0;
+					post.votes = post.upvotes - post.downvotes;
+					post.timestampISO = utils.toISOString(post.timestamp);
+					post.editedISO = parseInt(post.edited, 10) !== 0 ? utils.toISOString(post.edited) : '';
 					Posts.parsePost(post, next);
 				}, next);
 			},
@@ -219,28 +221,37 @@ var async = require('async'),
 		});
 	};
 
-	Posts.updatePostVoteCount = function(pid, voteCount, callback) {
+	Posts.updatePostVoteCount = function(postData, callback) {
+		if (!postData || !postData.pid || !postData.tid) {
+			return callback();
+		}
 		async.parallel([
-			function(next) {
-				Posts.getPostField(pid, 'tid', function(err, tid) {
-					if (err) {
-						return next(err);
-					}
-					topics.getTopicField(tid, 'mainPid', function(err, mainPid) {
-						if (err) {
-							return next(err);
-						}
-						if (parseInt(mainPid, 10) === parseInt(pid, 10)) {
+			function (next) {
+				if (postData.uid) {
+					db.sortedSetAdd('uid:' + postData.uid + ':posts:votes', postData.votes, postData.pid, next);
+				} else {
+					next();
+				}
+			},
+			function (next) {
+				async.waterfall([
+					function (next) {
+						topics.getTopicField(postData.tid, 'mainPid', next);
+					},
+					function (mainPid, next) {
+						if (parseInt(mainPid, 10) === parseInt(postData.pid, 10)) {
 							return next();
 						}
-						db.sortedSetAdd('tid:' + tid + ':posts:votes', voteCount, pid, next);
-					});
-				});
+						db.sortedSetAdd('tid:' + postData.tid + ':posts:votes', postData.votes, postData.pid, next);
+					}
+				], next);
 			},
-			function(next) {
-				Posts.setPostField(pid, 'votes', voteCount, next);
+			function (next) {
+				Posts.setPostFields(postData.pid, {upvotes: postData.upvotes, downvotes: postData.downvotes}, next);
 			}
-		], callback);
+		], function(err) {
+			callback(err);
+		});
 	};
 
 }(exports));

@@ -1,11 +1,9 @@
 'use strict';
 
-var async = require('async'),
+var async = require('async');
 
-	db = require('../../database'),
-	user = require('../../user'),
-	topics = require('../../topics'),
-	utils = require('../../../public/src/utils');
+var user = require('../../user');
+var topics = require('../../topics');
 
 module.exports = function(SocketTopics) {
 
@@ -13,13 +11,6 @@ module.exports = function(SocketTopics) {
 		if (!Array.isArray(tids) || !socket.uid) {
 			return callback(new Error('[[error:invalid-data]]'));
 		}
-
-		if (!tids.length) {
-			return callback();
-		}
-		tids = tids.filter(function(tid) {
-			return tid && utils.isNumber(tid);
-		});
 
 		topics.markAsRead(tids, socket.uid, function(err) {
 			if (err) {
@@ -43,7 +34,19 @@ module.exports = function(SocketTopics) {
 	};
 
 	SocketTopics.markAllRead = function(socket, data, callback) {
-		db.getSortedSetRevRangeByScore('topics:recent', 0, -1, '+inf', Date.now() - topics.unreadCutoff, function(err, tids) {
+		topics.markAllRead(socket.uid, function(err) {
+			if (err) {
+				return callback(err);
+			}
+
+			topics.pushUnreadCount(socket.uid);
+
+			callback();
+		});
+	};
+
+	SocketTopics.markCategoryTopicsRead = function(socket, cid, callback) {
+		topics.getUnreadTids(cid, socket.uid, '', function(err, tids) {
 			if (err) {
 				return callback(err);
 			}
@@ -52,13 +55,17 @@ module.exports = function(SocketTopics) {
 		});
 	};
 
-	SocketTopics.markCategoryTopicsRead = function(socket, cid, callback) {
-		topics.getUnreadTids(cid, socket.uid, 0, -1, function(err, tids) {
+	SocketTopics.markUnread = function(socket, tid, callback) {
+		if (!tid || !socket.uid) {
+			return callback(new Error('[[error:invalid-data]]'));
+		}
+		topics.markUnread(tid, socket.uid, function(err) {
 			if (err) {
 				return callback(err);
 			}
 
-			SocketTopics.markAsRead(socket, tids, callback);
+			topics.pushUnreadCount(socket.uid);
+			callback();
 		});
 	};
 

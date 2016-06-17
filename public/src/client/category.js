@@ -59,20 +59,25 @@ define('forum/category', [
 		});
 
 		handleIgnoreWatch(cid);
+
+		$(window).trigger('action:topics.loaded', {topics: ajaxify.data.topics});
 	};
 
 	function handleIgnoreWatch(cid) {
-		$('.watch, .ignore').on('click', function() {
+		$('[component="category/watching"], [component="category/ignoring"]').on('click', function() {
 			var $this = $(this);
-			var command = $this.hasClass('watch') ? 'watch' : 'ignore';
+			var command = $this.attr('component') === 'category/watching' ? 'watch' : 'ignore';
 
 			socket.emit('categories.' + command, cid, function(err) {
 				if (err) {
 					return app.alertError(err.message);
 				}
 
-				$('.watch').toggleClass('hidden', command === 'watch');
-				$('.ignore').toggleClass('hidden', command === 'ignore');
+				$('[component="category/watching/menu"]').toggleClass('hidden', command !== 'watch');
+				$('[component="category/watching/check"]').toggleClass('fa-check', command === 'watch');
+
+				$('[component="category/ignoring/menu"]').toggleClass('hidden', command !== 'ignore');
+				$('[component="category/ignoring/check"]').toggleClass('fa-check', command === 'ignore');
 
 				app.alertSuccess('[[category:' + command + '.message]]');
 			});
@@ -333,6 +338,8 @@ define('forum/category', [
 			html.find('.timeago').timeago();
 			app.createUserTooltips();
 			utils.makeNumbersHumanReadable(html.find('.human-readable-number'));
+
+			$(window).trigger('action:topics.loaded', {topics: data.topics});
 
 			callback();
 		});
